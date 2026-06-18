@@ -4,3 +4,7 @@ sdkconfig
 sdkconfig.old
 # Component-manager downloads (re-fetched from dependencies.lock, which IS tracked).
 managed_components/
+
+# Editor / OS
+.vscode/
+.DS_Store
