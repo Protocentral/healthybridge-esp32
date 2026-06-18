@@ -10,26 +10,51 @@ on:
 jobs:
   firmware:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: ESP-IDF build (esp32c3)
+      - name: ESP-IDF build + merge-bin (esp32c3)
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: release-v6.0
           target: esp32c3
           path: '.'
+          command: idf.py build && idf.py merge-bin -o healthypi5_next_esp32-merged.bin
 
-      - name: Collect artifacts
+      - name: Collect distributables
         run: |
-          mkdir -p artifacts
-          cp build/hb_lite_esp32c3.bin artifacts/ 2>/dev/null || true
-          cp build/bootloader/bootloader.bin artifacts/ 2>/dev/null || true
-          cp build/partition_table/partition-table.bin artifacts/ 2>/dev/null || true
+          mkdir -p dist
+          cp healthypi5_next_esp32-merged.bin            dist/
+          cp build/hb_lite_esp32c3.bin                   dist/healthypi5_next_esp32-app.bin
+          cp build/bootloader/bootloader.bin             dist/
+          cp build/partition_table/partition-table.bin  dist/
+          cp flash.sh flash.bat                          dist/
 
-      - name: Upload firmware
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: healthypi5_next_esp32-firmware
-          path: artifacts/
+          path: dist/
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body: |
+            ## Flashing
+
+            **Easiest (browser):** open the
+            [web installer](https://protocentral.github.io/healthypi5_next_esp32/)
+            in Chrome or Edge and click *Install*.
+
+            **Command line:** download `healthypi5_next_esp32-merged.bin` plus
+            `flash.sh` (or `flash.bat`), `pip install esptool`, then:
+
+            ```
+            ./flash.sh <PORT>               # full install (erases stored Wi-Fi/settings)
+            ./flash.sh <PORT> --app-only    # update app only, keeps settings
+            ```

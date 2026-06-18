@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flash HealthyPi 5 NEXT — ESP32-C3</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      max-width: 640px; margin: 0 auto; padding: 2.5rem 1.25rem; line-height: 1.55;
+    }
+    h1 { font-size: 1.5rem; }
+    .card { border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.25rem 1.5rem; margin: 1.5rem 0; }
+    .note { color: #b45309; background: #fff7ed; border-color: #fdba74; }
+    code { background: rgba(127,127,127,.15); padding: .1em .35em; border-radius: 4px; }
+    a { color: #0369a1; }
+    esp-web-install-button { display: inline-block; margin-top: .5rem; }
+  </style>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+</head>
+<body>
+  <h1>HealthyPi 5 NEXT — ESP32-C3 web installer</h1>
+  <p>
+    Flash the <strong>HealthyBridge Lite</strong> wireless firmware to the HealthyPi 5
+    ESP32-C3 directly from your browser — no tools to install.
+    Use <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong> on desktop
+    (Web Serial is required; Safari and Firefox are not supported).
+  </p>
+
+  <div class="card">
+    <ol>
+      <li>Connect the HealthyPi 5 <strong>ESP32-C3 USB Type-C</strong> port to your computer.</li>
+      <li>Click <em>Install</em> and select the serial port that appears.</li>
+    </ol>
+    <esp-web-install-button manifest="./manifest.json"></esp-web-install-button>
+  </div>
+
+  <div class="card note">
+    <strong>Note:</strong> the web installer performs a <em>full</em> install and
+    erases stored Wi-Fi credentials and settings, so you will re-provision over the
+    SoftAP captive portal afterwards. To update the application <em>without</em>
+    losing settings, use the command-line <code>flash.sh --app-only</code> /
+    <code>flash.bat --app-only</code> from the
+    <a href="https://github.com/Protocentral/healthypi5_next_esp32/releases/latest">latest release</a> instead.
+  </div>
+
+  <p>
+    Firmware source &amp; releases:
+    <a href="https://github.com/Protocentral/healthypi5_next_esp32">Protocentral/healthypi5_next_esp32</a>
+  </p>
+</body>
+</html>

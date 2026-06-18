@@ -58,6 +58,29 @@ data over **BLE, Wi-Fi, MQTT and a local web dashboard**.
   <img src="docs/images/architecture.svg" alt="HealthyPi 5 NEXT ESP32-C3 architecture: the RP2040 streams HealthyBridge Lite frames over UART to hb_link, which feeds a data_store that fans out to BLE, Wi-Fi, MQTT and a web dashboard; a control plane routes commands to and from the RP2040; clients are a phone app, browser and MQTT broker." width="560">
 </p>
 
+## Install prebuilt firmware (no build)
+
+The easiest way to flash or update a HealthyPi 5 ESP32-C3 — no toolchain required.
+
+**Browser (simplest):** open the **[web installer](https://protocentral.github.io/healthypi5_next_esp32/)**
+in Chrome or Edge, connect the ESP32-C3 USB Type-C port, and click *Install*.
+
+**Command line:** from the [latest release](https://github.com/Protocentral/healthypi5_next_esp32/releases/latest),
+download `healthypi5_next_esp32-merged.bin` (and the app-only binary if updating)
+plus `flash.sh`/`flash.bat`, then `pip install esptool` and run:
+
+```bash
+./flash.sh <PORT>                 # full install (merged image @ 0x0)
+./flash.sh <PORT> --app-only      # update the app only (@ 0x10000)
+```
+
+> A **full** install (merged image at `0x0`, and the browser installer) overwrites
+> the NVS region, so it **erases stored Wi-Fi credentials and settings** — you'll
+> re-provision over the SoftAP captive portal afterwards. Use `--app-only` to
+> update the firmware while keeping settings. There is no over-the-air (OTA)
+> update path: the partition table has a single `factory` app, so updates are over
+> USB/serial only.
+
 ## Getting started
 
 ### 1. Install ESP-IDF
