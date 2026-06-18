@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="812" viewBox="0 0 720 812" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#64748B"/>
+    </marker>
+  </defs>
+
+  <style>
+    .band-title { font-size: 14px; font-weight: 700; }
+    .name  { font-size: 13.5px; font-weight: 700; }
+    .desc  { font-size: 12.5px; }
+    .link  { font-size: 11.5px; font-weight: 600; fill: #C2410C; }
+    .divider-label { font-size: 12px; font-weight: 600; fill: #64748B; letter-spacing: .3px; }
+    .bus   { stroke: #64748B; stroke-width: 1.6; fill: none; }
+  </style>
+
+  <rect x="0" y="0" width="720" height="812" fill="#FFFFFF"/>
+
+  <!-- ===================== RP2040 (separate repo) ===================== -->
+  <rect x="20" y="20" width="680" height="68" rx="10" fill="#FFF7ED" stroke="#FB923C" stroke-width="1.5"/>
+  <text x="40" y="46" class="band-title" fill="#C2410C">HealthyPi 5 — RP2040 Main MCU</text>
+  <text x="40" y="68" class="desc" fill="#7C2D12">biosignal acquisition + DSP · ships in the healthypi5_next_rp2040 repo</text>
+
+  <!-- HealthyBridge link pill -->
+  <path d="M360,88 L360,98" class="bus" marker-end="url(#arrow)"/>
+  <rect x="150" y="98" width="420" height="30" rx="15" fill="#FFEDD5" stroke="#FB923C" stroke-width="1.2"/>
+  <text x="360" y="117" text-anchor="middle" class="link">HealthyBridge Lite · UART 921600 8N1, HW RTS/CTS · 0xAA55 framed, CRC-16/CCITT</text>
+  <path d="M360,128 L360,150" class="bus" marker-end="url(#arrow)"/>
+
+  <!-- ===================== ESP32-C3 (this repo) ===================== -->
+  <rect x="20" y="150" width="680" height="510" rx="10" fill="#ECFEFF" stroke="#06B6D4" stroke-width="1.5"/>
+  <text x="40" y="174" class="band-title" fill="#155E75">ESP32-C3 — HealthyBridge Lite firmware (this repo)</text>
+
+  <!-- hb_link -->
+  <rect x="160" y="186" width="400" height="42" rx="8" fill="#FFFFFF" stroke="#22D3EE" stroke-width="1.3"/>
+  <text x="360" y="205" text-anchor="middle" class="name" fill="#155E75">hb_link</text>
+  <text x="360" y="221" text-anchor="middle" class="desc" fill="#475569">UART RX frame parser + CRC verify</text>
+
+  <path d="M360,228 L360,244" class="bus" marker-end="url(#arrow)"/>
+
+  <!-- data_store -->
+  <rect x="120" y="244" width="480" height="46" rx="8" fill="#0891B2" stroke="#0E7490" stroke-width="1.3"/>
+  <text x="360" y="263" text-anchor="middle" class="name" fill="#FFFFFF">data_store</text>
+  <text x="360" y="280" text-anchor="middle" class="desc" fill="#E0F7FA">vitals + per-channel waveform rings (ECG / Resp / PPG)</text>
+
+  <!-- fan-out bus to the connectivity services -->
+  <path d="M360,290 L360,302 L88,302 L88,556" class="bus"/>
+  <path d="M88,330 L120,330" class="bus" marker-end="url(#arrow)"/>
+  <path d="M88,398 L120,398" class="bus" marker-end="url(#arrow)"/>
+  <path d="M88,466 L120,466" class="bus" marker-end="url(#arrow)"/>
+  <path d="M88,534 L120,534" class="bus" marker-end="url(#arrow)"/>
+
+  <!-- service rows -->
+  <rect x="120" y="304" width="520" height="52" rx="8" fill="#FFFFFF" stroke="#67E8F9" stroke-width="1.3"/>
+  <text x="138" y="326" class="name" fill="#155E75">BLE — NimBLE peripheral</text>
+  <text x="138" y="345" class="desc" fill="#475569">Heart Rate service + custom HealthyPi ECG · PPG · SpO₂ · RR services</text>
+
+  <rect x="120" y="372" width="520" height="52" rx="8" fill="#FFFFFF" stroke="#67E8F9" stroke-width="1.3"/>
+  <text x="138" y="394" class="name" fill="#155E75">Wi-Fi — STA + SoftAP provisioning</text>
+  <text x="138" y="413" class="desc" fill="#475569">captive-portal onboarding · BLE/Wi-Fi software coexistence</text>
+
+  <rect x="120" y="440" width="520" height="52" rx="8" fill="#FFFFFF" stroke="#67E8F9" stroke-width="1.3"/>
+  <text x="138" y="462" class="name" fill="#155E75">MQTT publish</text>
+  <text x="138" y="481" class="desc" fill="#475569">vitals JSON → healthypi5/&lt;mac&gt;/vitals (toggleable)</text>
+
+  <rect x="120" y="508" width="520" height="52" rx="8" fill="#FFFFFF" stroke="#67E8F9" stroke-width="1.3"/>
+  <text x="138" y="530" class="name" fill="#155E75">Web dashboard</text>
+  <text x="138" y="549" class="desc" fill="#475569">live vitals + SSE waveform stream · mDNS http://healthypi.local</text>
+
+  <!-- divider + control (independent) -->
+  <line x1="40" y1="582" x2="680" y2="582" stroke="#A5F3FC" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="40" y="602" class="divider-label">CONTROL PLANE</text>
+  <rect x="120" y="612" width="520" height="40" rx="8" fill="#F0FDFA" stroke="#99F6E4" stroke-width="1.3"/>
+  <text x="138" y="637" class="desc" fill="#334155"><tspan class="name" fill="#0F766E">control</tspan> — BLE / Wi-Fi / host commands routed to &amp; from the RP2040</text>
+
+  <!-- ===================== Clients ===================== -->
+  <path d="M360,660 L360,684" class="bus" marker-end="url(#arrow)"/>
+  <text x="372" y="678" class="desc" fill="#64748B">BLE · HTTP · MQTT</text>
+
+  <rect x="20" y="684" width="680" height="108" rx="10" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.5"/>
+  <text x="40" y="708" class="band-title" fill="#334155">Clients &amp; cloud</text>
+  <rect x="40" y="720" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.3"/>
+  <text x="140" y="742" text-anchor="middle" class="name" fill="#334155">Phone app</text>
+  <text x="140" y="760" text-anchor="middle" class="desc" fill="#64748B">BLE</text>
+  <rect x="260" y="720" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.3"/>
+  <text x="360" y="742" text-anchor="middle" class="name" fill="#334155">Browser</text>
+  <text x="360" y="760" text-anchor="middle" class="desc" fill="#64748B">http://healthypi.local</text>
+  <rect x="480" y="720" width="200" height="52" rx="8" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.3"/>
+  <text x="580" y="742" text-anchor="middle" class="name" fill="#334155">MQTT broker</text>
+  <text x="580" y="760" text-anchor="middle" class="desc" fill="#64748B">vitals topics</text>
+</svg>

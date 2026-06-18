@@ -1,0 +1,28 @@
+# HealthyBridge Lite ESP32-C3 defaults.
+CONFIG_IDF_TARGET="esp32c3"
+
+# --- Bluetooth LE via NimBLE (peripheral) ---
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+
+# --- Wi-Fi (E4): STA, coexisting with BLE on the single 2.4 GHz radio ---
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
+
+# Custom partition table — BLE+Wi-Fi image overflows the default 1 MB factory app.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# --- Logging ---
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+# Silence NimBLE host INFO spam ("GATT procedure initiated: notify; att_handle=")
+# emitted once per notification. Our own ble_gatt logs use a different tag.
+CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
+
+# Main task stack headroom for NimBLE + UART task.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096

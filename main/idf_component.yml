@@ -1,0 +1,5 @@
+# Managed component dependencies (ESP-IDF component manager).
+# esp-mqtt and mdns were extracted from the IDF tree in v6.x; pull from the registry.
+dependencies:
+  espressif/mqtt: "^1.0.0"
+  espressif/mdns: "^1.8.0"
