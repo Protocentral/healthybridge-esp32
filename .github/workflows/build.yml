@@ -27,7 +27,7 @@ jobs:
       - name: Collect distributables
         run: |
           mkdir -p dist
-          cp healthypi5_next_esp32-merged.bin            dist/
+          cp build/healthypi5_next_esp32-merged.bin      dist/
           cp build/hb_lite_esp32c3.bin                   dist/healthypi5_next_esp32-app.bin
           cp build/bootloader/bootloader.bin             dist/
           cp build/partition_table/partition-table.bin  dist/
