@@ -2,6 +2,11 @@
 
 [![build](https://github.com/Protocentral/healthypi5_next_esp32/actions/workflows/build.yml/badge.svg)](https://github.com/Protocentral/healthypi5_next_esp32/actions/workflows/build.yml)
 
+> Part of the **HealthyPi 5 NEXT** firmware — the dual-MCU (RP2040 + ESP32-C3)
+> rebuild of the HealthyPi 5 firmware. This repo is the ESP32-C3 half; the
+> Main-MCU firmware is at
+> [Protocentral/healthypi5_next_rp2040](https://github.com/Protocentral/healthypi5_next_rp2040).
+
 <p align="center">
   <img src="docs/images/healthypi5.jpg" alt="ProtoCentral HealthyPi 5 board" width="520">
 </p>
