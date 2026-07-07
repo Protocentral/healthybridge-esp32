@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — UART link implementation.
+ * HealthyBridge ESP32-C3 — UART link implementation.
  *
  * UART1 @ 921600 with HW RTS/CTS, wired to the RP2040 UART1:
  *   ESP TX  GPIO6  -> RP2040 RX  (P25)

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — SoftAP captive-portal provisioning (E4b).
+ * HealthyBridge ESP32-C3 — SoftAP captive-portal provisioning (E4b).
  *
  * DNS captive responder + HTTP settings form. See provisioning.h for the role
  * split with wifi.c (which owns the SoftAP itself).

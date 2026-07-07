@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — persistent config (NVS).
+ * HealthyBridge ESP32-C3 — persistent config (NVS).
  *
  * Holds Wi-Fi credentials and the independently-toggleable telemetry options
  * (MQTT publish, local web dashboard). Written by the captive portal / dashboard

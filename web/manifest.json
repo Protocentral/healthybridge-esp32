@@ -1,5 +1,5 @@
 {
-  "name": "HealthyPi 5 NEXT — HealthyBridge Lite (ESP32-C3)",
+  "name": "HealthyPi 5 NEXT — HealthyBridge (ESP32-C3)",
   "version": "latest",
   "new_install_prompt_erase": true,
   "builds": [
@@ -7,7 +7,7 @@
       "chipFamily": "ESP32-C3",
       "parts": [
         {
-          "path": "https://github.com/Protocentral/healthypi5_next_esp32/releases/latest/download/healthypi5_next_esp32-merged.bin",
+          "path": "https://github.com/Protocentral/healthybridge-esp32/releases/latest/download/healthypi5_next_esp32-merged.bin",
           "offset": 0
         }
       ]

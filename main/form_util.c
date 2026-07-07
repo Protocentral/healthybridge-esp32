@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — form-urlencoded parsing helpers.
+ * HealthyBridge ESP32-C3 — form-urlencoded parsing helpers.
  */
 #include <string.h>
 #include "form_util.h"

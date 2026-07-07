@@ -1,7 +1,9 @@
-# HealthyBridge Lite — link & protocol
+# HealthyBridge — link & protocol
 
-The ESP32-C3 firmware is a pure consumer of data produced by the RP2040 Main MCU.
-The two MCUs are connected on the HealthyPi 5 board by a dedicated UART.
+HealthyBridge is a generic framed-UART link between a **host MCU** and the
+**ESP32-C3** wireless bridge; the ESP32-C3 firmware is a pure consumer of the
+data the host produces. In the reference application the host is the RP2040 Main
+MCU, and the two are connected on the HealthyPi 5 board by a dedicated UART.
 
 ## Physical link (UART, HW RTS/CTS @ 921600 8N1)
 

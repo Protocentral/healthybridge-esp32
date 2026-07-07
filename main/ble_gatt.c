@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — BLE GATT (NimBLE peripheral), E2 full GATT.
+ * HealthyBridge ESP32-C3 — BLE GATT (NimBLE peripheral), E2 full GATT.
  *
  * Recreates the HealthyPi 5 BLE services/characteristics from the legacy
  * app/src/ble_module.c with the SAME UUIDs and notify byte formats so an

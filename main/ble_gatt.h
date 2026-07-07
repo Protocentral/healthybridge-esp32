@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — BLE GATT (NimBLE) public API.
+ * HealthyBridge ESP32-C3 — BLE GATT (NimBLE) public API.
  */
 #ifndef BLE_GATT_H
 #define BLE_GATT_H

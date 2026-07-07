@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — SoftAP captive-portal provisioning (E4b).
+ * HealthyBridge ESP32-C3 — SoftAP captive-portal provisioning (E4b).
  *
  * Brings up a SoftAP ("HealthyPi-XXXX"), a captive DNS responder (every A
  * query → the AP gateway, so the phone pops the portal), and an HTTP server

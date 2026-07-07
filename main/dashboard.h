@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — local web dashboard (E4d).
+ * HealthyBridge ESP32-C3 — local web dashboard (E4d).
  *
  * Optional, toggled by cfg->dashboard_enabled. When enabled and the STA link is
  * up, serves a live vitals page + settings form on the device's STA IP (port

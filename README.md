@@ -1,11 +1,17 @@
-# HealthyPi 5 NEXT — ESP32-C3 Firmware (HealthyBridge Lite, ESP-IDF)
+# HealthyBridge — BLE/Wi-Fi Bridge Firmware (ESP32-C3, ESP-IDF)
 
-[![build](https://github.com/Protocentral/healthypi5_next_esp32/actions/workflows/build.yml/badge.svg)](https://github.com/Protocentral/healthypi5_next_esp32/actions/workflows/build.yml)
+[![build](https://github.com/Protocentral/healthybridge-esp32/actions/workflows/build.yml/badge.svg)](https://github.com/Protocentral/healthybridge-esp32/actions/workflows/build.yml)
 
-> Part of the **HealthyPi 5 NEXT** firmware — the dual-MCU (RP2040 + ESP32-C3)
-> rebuild of the HealthyPi 5 firmware. This repo is the ESP32-C3 half; the
-> Main-MCU firmware is at
-> [Protocentral/healthypi5_next_rp2040](https://github.com/Protocentral/healthypi5_next_rp2040).
+> **HealthyBridge** turns an ESP32-C3 into a drop-in wireless co-processor: any
+> host MCU speaks a small framed protocol over one UART, and this firmware
+> bridges that data out over **BLE, Wi-Fi, MQTT and a local web dashboard** — the
+> host needs no wireless stack of its own.
+>
+> It was developed primarily to add wireless connectivity to the dual-MCU
+> **HealthyPi 5 NEXT** board (where the RP2040 Main MCU, separate repo
+> [Protocentral/healthypi5_next_rp2040](https://github.com/Protocentral/healthypi5_next_rp2040),
+> is the UART host), but it is **not tied to HealthyPi** — any project that needs
+> to add BLE/Wi-Fi connectivity to a UART host can use it.
 
 <p align="center">
   <img src="docs/images/healthypi5.jpg" alt="ProtoCentral HealthyPi 5 board" width="520">
@@ -18,20 +24,22 @@
   <a href="https://www.mouser.com/c/?m=ProtoCentral&q=HealthyPi%205">Mouser</a>
 </p>
 
-**HealthyBridge Lite** is the wireless co-processor firmware for the onboard
-**ESP32-C3** of the [ProtoCentral HealthyPi 5](https://protocentral.com/product/healthypi-5-vital-signs-monitoring-hat-kit/)
-biosignal monitoring board, built on the **Espressif IoT Development Framework
-(ESP-IDF)** with the **NimBLE** Bluetooth stack.
+**HealthyBridge** is generic wireless-bridge firmware for the **ESP32-C3**, built
+on the **Espressif IoT Development Framework (ESP-IDF)** with the **NimBLE**
+Bluetooth stack. The design goal is separation of concerns: a host MCU does all
+of the real work (sensing, DSP, control) and hands finished data to the ESP32-C3
+over a simple framed UART link — the **HealthyBridge** protocol — and this
+firmware re-exposes it over **BLE, Wi-Fi, MQTT and a local web dashboard**. The
+host stays fully fault-isolated from the radio: if Wi-Fi or BLE stalls, the host
+is unaffected.
 
-It is the connectivity half of the HealthyPi 5 NEXT firmware: the
-[RP2040 Main MCU](https://github.com/Protocentral/healthypi5_next_rp2040) does all
-biosignal acquisition and DSP and streams vitals and waveforms to the ESP32-C3
-over a framed UART link (**HealthyBridge Lite**). This firmware re-exposes that
-data over **BLE, Wi-Fi, MQTT and a local web dashboard**.
-
-> **All acquisition and DSP stay on the RP2040.** The ESP32-C3 is pure
-> connectivity and is fully fault-isolated from the acquisition path — if Wi-Fi
-> or BLE stalls, sampling on the RP2040 is unaffected.
+The **reference application** is the [ProtoCentral HealthyPi 5](https://protocentral.com/product/healthypi-5-vital-signs-monitoring-hat-kit/)
+biosignal monitoring board (the **HealthyPi 5 NEXT** firmware), where the
+[RP2040 Main MCU](https://github.com/Protocentral/healthypi5_next_rp2040) owns all
+acquisition and DSP and streams vitals and waveforms across the link. The parts
+below describe that application; only the payload set (vitals/ECG/PPG) and the
+BLE service map are HealthyPi-specific — the framing, transport and connectivity
+plumbing are reusable with any UART host.
 
 ## Hardware features (HealthyPi 5)
 
@@ -44,7 +52,7 @@ data over **BLE, Wi-Fi, MQTT and a local web dashboard**.
 
 ## Firmware features
 
-- **HealthyBridge Lite link** — UART frame parser (`0xAA55` framing, CRC-16/CCITT) consuming vitals/waveforms/battery from the RP2040
+- **HealthyBridge link** — UART frame parser (`0xAA55` framing, CRC-16/CCITT) consuming vitals/waveforms/battery from the RP2040
 - **BLE (NimBLE)** — advertises as "HealthyPi 5"; standard Heart Rate service plus the custom HealthyPi ECG / PPG / SpO₂ / RR services, so the existing phone app works unchanged
 - **Wi-Fi STA** — connects with stored credentials; BLE/Wi-Fi share the single 2.4 GHz radio via software coexistence
 - **SoftAP captive-portal provisioning** — with no credentials, brings up an access point + DNS + HTTP form to onboard Wi-Fi, MQTT and dashboard settings, then reboots into STA
@@ -52,20 +60,33 @@ data over **BLE, Wi-Fi, MQTT and a local web dashboard**.
 - **Local web dashboard** — live vitals page with Server-Sent-Events waveform streaming (ECG/PPG), settings form, and a re-provision button; advertised over mDNS at `http://healthypi.local`
 - **Command plane** — BLE / Wi-Fi / host commands routed to and from the RP2040; status reported back on the 1 Hz line
 
+## Host UART link
+
+The host connects to the ESP32-C3 over **UART1 at 921600 baud, 8N1, with hardware
+RTS/CTS flow control**. Wire your host to these ESP32-C3 pins (fixed in
+[`main/hb_link.c`](main/hb_link.c)):
+
+| ESP32-C3 | GPIO | dir | Host |
+|---|---|:---:|---|
+| TX  | GPIO6 | → | host RX  |
+| RX  | GPIO7 | ← | host TX  |
+| RTS | GPIO5 | → | host CTS |
+| CTS | GPIO4 | ← | host RTS |
+
 ## Architecture
 
 <p align="center">
-  <img src="docs/images/architecture.svg" alt="HealthyPi 5 NEXT ESP32-C3 architecture: the RP2040 streams HealthyBridge Lite frames over UART to hb_link, which feeds a data_store that fans out to BLE, Wi-Fi, MQTT and a web dashboard; a control plane routes commands to and from the RP2040; clients are a phone app, browser and MQTT broker." width="560">
+  <img src="docs/images/architecture.svg" alt="HealthyPi 5 NEXT ESP32-C3 architecture: the RP2040 streams HealthyBridge frames over UART to hb_link, which feeds a data_store that fans out to BLE, Wi-Fi, MQTT and a web dashboard; a control plane routes commands to and from the RP2040; clients are a phone app, browser and MQTT broker." width="560">
 </p>
 
 ## Install prebuilt firmware (no build)
 
 The easiest way to flash or update a HealthyPi 5 ESP32-C3 — no toolchain required.
 
-**Browser (simplest):** open the **[web installer](https://protocentral.github.io/healthypi5_next_esp32/)**
+**Browser (simplest):** open the **[web installer](https://protocentral.github.io/healthybridge-esp32/)**
 in Chrome or Edge, connect the ESP32-C3 USB Type-C port, and click *Install*.
 
-**Command line:** from the [latest release](https://github.com/Protocentral/healthypi5_next_esp32/releases/latest),
+**Command line:** from the [latest release](https://github.com/Protocentral/healthybridge-esp32/releases/latest),
 download `healthypi5_next_esp32-merged.bin` (and the app-only binary if updating)
 plus `flash.sh`/`flash.bat`, then `pip install esptool` and run:
 
@@ -97,8 +118,8 @@ then load the environment in your shell:
 ### 2. Clone the repository
 
 ```bash
-git clone https://github.com/Protocentral/healthypi5_next_esp32.git
-cd healthypi5_next_esp32
+git clone https://github.com/Protocentral/healthybridge-esp32.git
+cd healthybridge-esp32
 ```
 
 The MQTT and mDNS managed components are fetched automatically by the IDF
@@ -129,7 +150,7 @@ the dashboard is reachable at **http://healthypi.local**.
 
 ## Documentation
 
-The HealthyBridge Lite wire protocol, the BLE service map, and the Wi-Fi / MQTT /
+The HealthyBridge wire protocol, the BLE service map, and the Wi-Fi / MQTT /
 dashboard design notes live under [`docs/`](docs/). The companion Main-MCU
 firmware is at
 [Protocentral/healthypi5_next_rp2040](https://github.com/Protocentral/healthypi5_next_rp2040).

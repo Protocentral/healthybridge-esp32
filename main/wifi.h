@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — Wi-Fi (STA) management.
+ * HealthyBridge ESP32-C3 — Wi-Fi (STA) management.
  */
 #ifndef WIFI_H
 #define WIFI_H

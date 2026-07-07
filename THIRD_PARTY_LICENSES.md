@@ -1,6 +1,6 @@
 # Third-party components
 
-The HealthyBridge Lite ESP32-C3 firmware is MIT-licensed (see [LICENSE](LICENSE)).
+The HealthyBridge ESP32-C3 firmware is MIT-licensed (see [LICENSE](LICENSE)).
 It is built with the Espressif IoT Development Framework (ESP-IDF) and pulls a
 small number of managed components, each under its own license.
 

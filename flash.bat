@@ -1,5 +1,5 @@
 @echo off
-REM Flash prebuilt HealthyBridge Lite firmware to a HealthyPi 5 ESP32-C3 (Windows).
+REM Flash prebuilt HealthyBridge firmware to a HealthyPi 5 ESP32-C3 (Windows).
 REM
 REM Requires esptool:  pip install esptool
 REM Connect the ESP32-C3 USB Type-C port and find its COM port in Device Manager.

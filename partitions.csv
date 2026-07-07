@@ -1,4 +1,4 @@
-# HealthyBridge Lite — custom partition table (4 MB flash).
+# HealthyBridge — custom partition table (4 MB flash).
 # Default single-factory table caps the app at 1 MB; BLE+Wi-Fi coexistence
 # pushes the image just over that, so the factory app is grown to 2 MB.
 # Name,   Type, SubType, Offset,  Size

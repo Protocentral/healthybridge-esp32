@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — UART link (RX parser + TX) to the RP2040.
+ * HealthyBridge ESP32-C3 — UART link (RX parser + TX) to the RP2040.
  */
 #ifndef HB_LINK_H
 #define HB_LINK_H

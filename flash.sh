@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Flash prebuilt HealthyBridge Lite firmware to a HealthyPi 5 ESP32-C3.
+# Flash prebuilt HealthyBridge firmware to a HealthyPi 5 ESP32-C3.
 #
 # Requires esptool (https://github.com/espressif/esptool):  pip install esptool
 # Connect the ESP32-C3 USB Type-C port and find its serial port:

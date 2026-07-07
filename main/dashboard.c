@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — local web dashboard (E4d) implementation.
+ * HealthyBridge ESP32-C3 — local web dashboard (E4d) implementation.
  */
 #include <string.h>
 #include <stdio.h>

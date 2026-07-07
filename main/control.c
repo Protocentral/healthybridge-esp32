@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — control-command handler.
+ * HealthyBridge ESP32-C3 — control-command handler.
  */
 #include <string.h>
 #include "esp_log.h"

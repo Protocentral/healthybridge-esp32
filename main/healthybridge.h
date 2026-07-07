@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Ashwin Whitchurch, ProtoCentral Electronics
  *
- * HealthyBridge Lite — SHARED protocol contract (RP2040 <-> ESP32-C3).
+ * HealthyBridge — SHARED protocol contract (RP2040 <-> ESP32-C3).
  *
  * THIS FILE MUST STAY BYTE-IDENTICAL to app_gf/src/healthybridge.h (the
  * protocol section). Both MCUs are little-endian, so the packed structs are

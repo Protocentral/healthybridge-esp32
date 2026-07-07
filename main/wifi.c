@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — Wi-Fi (STA) implementation.
+ * HealthyBridge ESP32-C3 — Wi-Fi (STA) implementation.
  *
  * Connects in station mode using the stored credentials and coexists with
  * NimBLE on the single 2.4 GHz radio (software coexistence, enabled in

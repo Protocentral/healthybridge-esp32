@@ -2,9 +2,9 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Ashwin Whitchurch, ProtoCentral Electronics
  *
- * HealthyBridge Lite — ESP32-C3 BLE/Wi-Fi co-processor, app entry.
+ * HealthyBridge — ESP32-C3 BLE/Wi-Fi co-processor, app entry.
  *
- * Ingests HealthyBridge Lite frames from the RP2040 (app_gf) over UART1 and
+ * Ingests HealthyBridge frames from the RP2040 (app_gf) over UART1 and
  * re-exposes vitals over BLE. The RP2040 owns all acquisition/DSP; this MCU is
  * pure connectivity.
  *
@@ -40,7 +40,7 @@ static void nvs_init(void)
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "HealthyBridge Lite (ESP32-C3) starting");
+    ESP_LOGI(TAG, "HealthyBridge (ESP32-C3) starting");
 
     nvs_init();          /* shared by cfg + NimBLE + Wi-Fi */
     cfg_init();          /* load Wi-Fi creds + telemetry toggles from NVS */

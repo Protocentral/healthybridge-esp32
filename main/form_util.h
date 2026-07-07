@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — x-www-form-urlencoded parsing helpers.
+ * HealthyBridge ESP32-C3 — x-www-form-urlencoded parsing helpers.
  * Shared by the captive portal (provisioning) and the web dashboard.
  */
 #ifndef FORM_UTIL_H

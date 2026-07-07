@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — shared data store.
+ * HealthyBridge ESP32-C3 — shared data store.
  *
  * Single owner of the latest vitals and most-recent waveform samples decoded
  * from the RP2040 link. Written by the hb_link RX task; read by BLE (and, later,

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — shared data store implementation.
+ * HealthyBridge ESP32-C3 — shared data store implementation.
  */
 #include <string.h>
 #include "freertos/FreeRTOS.h"

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge Lite ESP32-C3 — persistent config (NVS) implementation.
+ * HealthyBridge ESP32-C3 — persistent config (NVS) implementation.
  */
 #include <string.h>
 #include "nvs.h"
