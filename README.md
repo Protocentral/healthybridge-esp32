@@ -97,10 +97,7 @@ RTS/CTS flow control**. Wire your host to these ESP32-C3 pins (fixed in
 
 The easiest way to flash or update a HealthyPi 5 ESP32-C3 — no toolchain required.
 
-**Browser (simplest):** open the **[web installer](https://protocentral.github.io/healthybridge-esp32/)**
-in Chrome or Edge, connect the ESP32-C3 USB Type-C port, and click *Install*.
-
-**Command line:** from the [latest release](https://github.com/Protocentral/healthybridge-esp32/releases/latest),
+From the [latest release](https://github.com/Protocentral/healthybridge-esp32/releases/latest),
 download `healthybridge-esp32-merged.bin` (and the app-only binary if updating)
 plus `flash.sh`/`flash.bat`, then `pip install esptool` and run:
 
@@ -109,7 +106,7 @@ plus `flash.sh`/`flash.bat`, then `pip install esptool` and run:
 ./flash.sh <PORT> --app-only      # update the app only (@ 0x10000)
 ```
 
-> A **full** install (merged image at `0x0`, and the browser installer) overwrites
+> A **full** install (merged image at `0x0`) overwrites
 > the NVS region, so it **erases stored Wi-Fi credentials and settings** — you'll
 > re-provision over the SoftAP captive portal afterwards. Use `--app-only` to
 > update the firmware while keeping settings. There is no over-the-air (OTA)

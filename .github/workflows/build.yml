@@ -47,11 +47,7 @@ jobs:
           body: |
             ## Flashing
 
-            **Easiest (browser):** open the
-            [web installer](https://protocentral.github.io/healthybridge-esp32/)
-            in Chrome or Edge and click *Install*.
-
-            **Command line:** download `healthybridge-esp32-merged.bin` plus
+            Download `healthybridge-esp32-merged.bin` plus
             `flash.sh` (or `flash.bat`), `pip install esptool`, then:
 
             ```
