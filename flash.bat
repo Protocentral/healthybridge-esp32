@@ -9,7 +9,7 @@ REM   flash.bat COM5                FULL install (merged image @ 0x0) - erases W
 REM   flash.bat COM5 --app-only     UPDATE app only (@ 0x10000)       - keeps Wi-Fi/settings
 REM
 REM Download the binaries from the GitHub release into this folder:
-REM   healthypi5_next_esp32-merged.bin  and/or  healthypi5_next_esp32-app.bin
+REM   healthybridge-esp32-merged.bin  and/or  healthybridge-esp32-app.bin
 setlocal
 set PORT=%1
 set MODE=%2
@@ -23,10 +23,10 @@ if "%PORT%"=="" (
 
 if "%MODE%"=="--app-only" (
   echo ^>^> Updating app only @ 0x10000 ^(stored Wi-Fi / settings preserved^)
-  python -m esptool --chip %CHIP% -p %PORT% -b %BAUD% write_flash 0x10000 healthypi5_next_esp32-app.bin
+  python -m esptool --chip %CHIP% -p %PORT% -b %BAUD% write_flash 0x10000 healthybridge-esp32-app.bin
 ) else (
   echo ^>^> Full install @ 0x0 ^(this ERASES stored Wi-Fi / settings - re-provision after^)
-  python -m esptool --chip %CHIP% -p %PORT% -b %BAUD% write_flash 0x0 healthypi5_next_esp32-merged.bin
+  python -m esptool --chip %CHIP% -p %PORT% -b %BAUD% write_flash 0x0 healthybridge-esp32-merged.bin
 )
 
 echo ^>^> Done. Reset the board to run the new firmware.

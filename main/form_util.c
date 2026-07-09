@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge ESP32-C3 — form-urlencoded parsing helpers.
+ * HealthyBridge ESP32-C3 — form parsing / HTML escaping helpers.
  */
 #include <string.h>
 #include "form_util.h"
@@ -29,6 +29,35 @@ static void urldecode(char *dst, size_t dstlen, const char *src)
                 dst[o++] = src[i];
             }
         } else {
+            dst[o++] = src[i];
+        }
+    }
+    dst[o] = '\0';
+}
+
+void html_escape(char *dst, size_t dstlen, const char *src)
+{
+    if (dstlen == 0) {
+        return;
+    }
+    size_t o = 0;
+    for (size_t i = 0; src[i]; i++) {
+        const char *ent;
+        switch (src[i]) {
+        case '&':  ent = "&amp;";  break;
+        case '<':  ent = "&lt;";   break;
+        case '>':  ent = "&gt;";   break;
+        case '"':  ent = "&quot;"; break;
+        case '\'': ent = "&#39;";  break;
+        default:   ent = NULL;     break;
+        }
+        if (ent) {
+            size_t elen = strlen(ent);
+            if (o + elen >= dstlen) break;   /* don't split an entity */
+            memcpy(dst + o, ent, elen);
+            o += elen;
+        } else {
+            if (o + 1 >= dstlen) break;
             dst[o++] = src[i];
         }
     }

@@ -13,8 +13,8 @@
 #                                     #   -> keeps stored Wi-Fi / settings
 #
 # Binaries are expected in the current directory (download them from the
-# GitHub release): healthypi5_next_esp32-merged.bin  and/or
-# healthypi5_next_esp32-app.bin
+# GitHub release): healthybridge-esp32-merged.bin  and/or
+# healthybridge-esp32-app.bin
 set -euo pipefail
 
 PORT="${1:-}"
@@ -33,12 +33,12 @@ elif command -v esptool >/dev/null 2>&1;   then ESPTOOL=(esptool)
 else ESPTOOL=(python3 -m esptool); fi
 
 if [ "$MODE" = "--app-only" ]; then
-  BIN="healthypi5_next_esp32-app.bin"
+  BIN="healthybridge-esp32-app.bin"
   [ -f "$BIN" ] || { echo "missing $BIN (download it from the release)" >&2; exit 1; }
   echo ">> Updating app only @ 0x10000 (stored Wi-Fi / settings preserved)"
   "${ESPTOOL[@]}" --chip "$CHIP" -p "$PORT" -b "$BAUD" write_flash 0x10000 "$BIN"
 else
-  BIN="healthypi5_next_esp32-merged.bin"
+  BIN="healthybridge-esp32-merged.bin"
   [ -f "$BIN" ] || { echo "missing $BIN (download it from the release)" >&2; exit 1; }
   echo ">> Full install @ 0x0 (this ERASES stored Wi-Fi / settings — re-provision after)"
   "${ESPTOOL[@]}" --chip "$CHIP" -p "$PORT" -b "$BAUD" write_flash 0x0 "$BIN"

@@ -101,7 +101,7 @@ The easiest way to flash or update a HealthyPi 5 ESP32-C3 — no toolchain requi
 in Chrome or Edge, connect the ESP32-C3 USB Type-C port, and click *Install*.
 
 **Command line:** from the [latest release](https://github.com/Protocentral/healthybridge-esp32/releases/latest),
-download `healthypi5_next_esp32-merged.bin` (and the app-only binary if updating)
+download `healthybridge-esp32-merged.bin` (and the app-only binary if updating)
 plus `flash.sh`/`flash.bat`, then `pip install esptool` and run:
 
 ```bash

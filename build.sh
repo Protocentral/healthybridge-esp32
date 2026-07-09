@@ -17,7 +17,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 TARGET="esp32c3"
-MERGED_BIN="healthypi5_next_esp32-merged.bin"
+MERGED_BIN="healthybridge-esp32-merged.bin"
 MODE="${1:-build}"
 
 # --- Ensure idf.py is on PATH (source the IDF environment if not) ---------

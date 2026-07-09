@@ -138,7 +138,10 @@ static esp_err_t page_get(httpd_req_t *req)
     SC("></label>"
     "<input class=fld type=text name=mqtt_uri placeholder='mqtt://broker:1883' value='");
     if (c->mqtt_uri[0]) {
-        SC(c->mqtt_uri);
+        /* Escaped: an apostrophe in the URI would otherwise close value='…'. */
+        char uri_e[256];
+        html_escape(uri_e, sizeof(uri_e), c->mqtt_uri);
+        SC(uri_e);
     }
     SC("'><input type=hidden name=dash_en value=on>"
     "<div class=act><button type=button class=tb id=cancel>Close</button>"

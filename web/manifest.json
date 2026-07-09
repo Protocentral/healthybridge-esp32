@@ -7,7 +7,7 @@
       "chipFamily": "ESP32-C3",
       "parts": [
         {
-          "path": "https://github.com/Protocentral/healthybridge-esp32/releases/latest/download/healthypi5_next_esp32-merged.bin",
+          "path": "https://github.com/Protocentral/healthybridge-esp32/releases/latest/download/healthybridge-esp32-merged.bin",
           "offset": 0
         }
       ]

@@ -22,16 +22,16 @@ jobs:
           esp_idf_version: release-v6.0
           target: esp32c3
           path: '.'
-          command: idf.py build && idf.py merge-bin -o healthypi5_next_esp32-merged.bin
+          command: idf.py build && idf.py merge-bin -o healthybridge-esp32-merged.bin
 
       - name: Collect distributables
         run: |
           mkdir -p dist
-          cp build/healthypi5_next_esp32-merged.bin      dist/
-          cp build/healthybridge_esp32c3.bin             dist/healthypi5_next_esp32-app.bin
-          cp build/bootloader/bootloader.bin             dist/
+          cp build/healthybridge-esp32-merged.bin       dist/
+          cp build/healthybridge_esp32c3.bin            dist/healthybridge-esp32-app.bin
+          cp build/bootloader/bootloader.bin            dist/
           cp build/partition_table/partition-table.bin  dist/
-          cp flash.sh flash.bat                          dist/
+          cp flash.sh flash.bat                         dist/
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -51,7 +51,7 @@ jobs:
             [web installer](https://protocentral.github.io/healthybridge-esp32/)
             in Chrome or Edge and click *Install*.
 
-            **Command line:** download `healthypi5_next_esp32-merged.bin` plus
+            **Command line:** download `healthybridge-esp32-merged.bin` plus
             `flash.sh` (or `flash.bat`), `pip install esptool`, then:
 
             ```

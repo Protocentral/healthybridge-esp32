@@ -36,6 +36,15 @@ static volatile bool    s_dns_run;
 static esp_err_t root_get(httpd_req_t *req)
 {
     const struct hb_cfg *c = cfg_get();
+
+    /* Escape the stored values before interpolating them into the markup: a
+     * quote in an SSID or broker URI would otherwise break out of the value=""
+     * attribute. Escaping can expand a value up to 6x (&quot;), so these are
+     * sized well above the 32/127-char cfg fields. */
+    char ssid_e[128], uri_e[256];
+    html_escape(ssid_e, sizeof(ssid_e), c->wifi_ssid);
+    html_escape(uri_e, sizeof(uri_e), c->mqtt_uri);
+
     char buf[1400];
     int n = snprintf(buf, sizeof(buf),
         "<!DOCTYPE html><html><head><meta name=viewport "
@@ -56,13 +65,22 @@ static esp_err_t root_get(httpd_req_t *req)
         "placeholder='mqtt://broker:1883' maxlength=127>"
         "<label><input type=checkbox name=dash_en %s> Local web dashboard</label>"
         "<button type=submit>Save &amp; Connect</button></form></body></html>",
-        c->wifi_ssid,
+        ssid_e,
         c->mqtt_enabled ? "checked" : "",
-        c->mqtt_uri,
+        uri_e,
         c->dashboard_enabled ? "checked" : "");
 
+    /* snprintf() returns the length it *would* have written — clamp before
+     * handing a length to httpd_resp_send(), or a truncated page would read
+     * past the end of buf. */
+    if (n < 0) {
+        n = 0;
+    } else if ((size_t)n >= sizeof(buf)) {
+        n = (int)sizeof(buf) - 1;
+    }
+
     httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, buf, n > 0 ? n : 0);
+    httpd_resp_send(req, buf, n);
     return ESP_OK;
 }
 

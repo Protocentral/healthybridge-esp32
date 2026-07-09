@@ -1,0 +1,9 @@
+# clangd config for this ESP-IDF project.
+#
+# The RISC-V cross-compiler (riscv32-esp-elf-gcc) passes GCC-specific -f*/-m*
+# flags that clangd's bundled clang does not understand, which otherwise makes
+# every translation unit fail to parse in the editor. Strip them.
+#
+# Needs compile_commands.json, which `idf.py build` writes into build/.
+CompileFlags:
+    Remove: [-f*, -m*]

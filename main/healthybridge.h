@@ -46,9 +46,9 @@
 #define HB_CMD_BLE_ADV_STOP  0x11
 #define HB_CMD_BLE_SET_NAME  0x12
 #define HB_CMD_GET_STATUS    0x30
-#define HB_CMD_WIFI_ENABLE   0x20   /* reserved for the Wi-Fi follow-on */
-#define HB_CMD_WIFI_DISABLE  0x21
-#define HB_CMD_WIFI_SOFTAP   0x22
+#define HB_CMD_WIFI_ENABLE   0x20   /* STA connect with stored credentials  */
+#define HB_CMD_WIFI_DISABLE  0x21   /* stop STA / AP                        */
+#define HB_CMD_WIFI_SOFTAP   0x22   /* open the SoftAP captive portal       */
 
 struct hb_frame_header {
     uint16_t sync;
