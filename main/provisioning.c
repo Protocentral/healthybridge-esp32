@@ -30,11 +30,13 @@ static bool             s_active;
 static httpd_handle_t   s_httpd;
 static TaskHandle_t     s_dns_task;
 static volatile bool    s_dns_run;
+static volatile bool    s_client_seen;   /* someone opened the portal */
 
 /* ---- HTTP handlers ------------------------------------------------------- */
 
 static esp_err_t root_get(httpd_req_t *req)
 {
+    s_client_seen = true;
     const struct hb_cfg *c = cfg_get();
 
     /* Escape the stored values before interpolating them into the markup: a
@@ -94,6 +96,7 @@ static void reboot_task(void *arg)
 
 static esp_err_t save_post(httpd_req_t *req)
 {
+    s_client_seen = true;
     int total = req->content_len;
     if (total <= 0 || total > 1024) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad body");
@@ -142,6 +145,7 @@ static esp_err_t save_post(httpd_req_t *req)
  * detection (generate_204, hotspot-detect.html, …) triggers the sign-in UI. */
 static esp_err_t captive_redirect(httpd_req_t *req, httpd_err_code_t err)
 {
+    s_client_seen = true;   /* OS captive-portal probe == a device joined the AP */
     httpd_resp_set_status(req, "302 Found");
     httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
     httpd_resp_send(req, NULL, 0);
@@ -214,6 +218,7 @@ void provisioning_start(void)
     if (s_active) {
         return;
     }
+    s_client_seen = false;
     httpd_config_t hc = HTTPD_DEFAULT_CONFIG();
     hc.lru_purge_enable = true;
     if (httpd_start(&s_httpd, &hc) != ESP_OK) {
@@ -246,3 +251,5 @@ void provisioning_stop(void)
     s_active = false;
     ESP_LOGI(TAG, "captive portal down");
 }
+
+bool provisioning_had_client(void) { return s_client_seen; }

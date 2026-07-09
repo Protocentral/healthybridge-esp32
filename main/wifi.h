@@ -12,14 +12,17 @@
  * connect in STA mode. Otherwise stays idle until provisioned. */
 void wifi_init(void);
 
-/* (Re)connect STA using the current cfg credentials. */
+/* (Re)connect STA using the current cfg credentials. Re-arms the retry budgets. */
 void wifi_start_sta(void);
 
-/* Bring up the SoftAP captive portal for on-device provisioning. */
+/* Bring up the SoftAP captive portal for on-device provisioning, at a human's
+ * (or the host MCU's) explicit request. Such a portal is *sticky* — it stays up
+ * until provisioning completes, unlike one opened automatically after failures. */
 void wifi_start_provisioning(void);
 
-/* Service deferred Wi-Fi work; call once per second from the main loop. Opens
- * the SoftAP portal if STA failed to connect WIFI_STA_MAX_FAIL times in a row. */
+/* Wi-Fi scheduler; call once per second from the main loop. Performs the backoff
+ * reconnect, opens a deferred portal, and times an unused automatic portal out
+ * back to STA. All esp_wifi mode changes happen here, never in the event loop. */
 void wifi_tick(void);
 
 /* Disconnect/stop STA. */

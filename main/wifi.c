@@ -4,10 +4,27 @@
  *
  * Connects in station mode using the stored credentials and coexists with
  * NimBLE on the single 2.4 GHz radio (software coexistence, enabled in
- * sdkconfig). Auto-reconnects on disconnect; after WIFI_STA_MAX_FAIL consecutive
- * failures it falls back to the SoftAP captive portal (wifi_start_provisioning).
+ * sdkconfig).
+ *
+ * Reconnect policy — the goal is to never permanently abandon credentials that
+ * work, while still surfacing the setup portal when they genuinely don't:
+ *
+ *   - Retries use capped exponential backoff (1..60 s) scheduled from the 1 Hz
+ *     wifi_tick(), not an immediate reconnect from the event handler. Hammering
+ *     esp_wifi_connect() starves BLE under software coexistence.
+ *   - The disconnect reason discriminates "wrong password" (auth-class, a
+ *     definitive verdict) from "AP is away" (no-AP-found / beacon timeout, which
+ *     is just a rebooting router). Auth failures open the portal after only
+ *     WIFI_AUTH_MAX_FAIL strikes; everything else retries indefinitely.
+ *   - A never-yet-connected boot still gives up after WIFI_STA_MAX_FAIL tries,
+ *     so a typo'd SSID (which yields NO_AP_FOUND forever) reaches the portal.
+ *   - An automatically-opened portal is *reversible*: if nobody uses it within
+ *     AP_PORTAL_TIMEOUT_S it tears down and resumes the STA retry loop, so a
+ *     device stranded by a long outage heals itself. A portal opened because the
+ *     credentials are wrong — or because a human asked for it — is sticky.
  */
 #include <string.h>
+#include <stdint.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "esp_wifi.h"
@@ -26,10 +43,22 @@ static const char *TAG = "wifi";
 #define AP_MAX_CONN    4
 #define AP_CHANNEL     1
 
-/* Consecutive failed STA connect attempts before falling back to the SoftAP
- * captive portal. At ESP-IDF's connect-timeout cadence this is ~1-2 min of
- * retrying an unreachable/wrong network before self-rescuing into onboarding. */
+/* Auth-class failures (a wrong password) before opening the portal. Low: there
+ * is nothing to gain by retrying a password the AP has already rejected. */
+#define WIFI_AUTH_MAX_FAIL 3
+
+/* Non-auth failures before opening the portal, but only on a boot that has never
+ * connected. Once a connection has succeeded we retry forever instead, on the
+ * assumption the network is temporarily down rather than misconfigured. */
 #define WIFI_STA_MAX_FAIL 20
+
+/* An automatically-opened portal that nobody touches within this long gives the
+ * radio back to the STA retry loop. */
+#define AP_PORTAL_TIMEOUT_S 600
+
+/* Capped exponential backoff between connect attempts, in seconds, indexed by
+ * (consecutive failures - 1) and held at the last entry. */
+static const uint16_t s_backoff_s[] = { 1, 2, 4, 8, 15, 30, 60 };
 
 static bool      s_inited;
 static bool      s_connected;
@@ -39,8 +68,40 @@ static esp_netif_t *s_sta_netif;
 static esp_netif_t *s_ap_netif;
 
 static bool      s_sta_active;          /* STA up and auto-reconnect wanted */
-static uint8_t   s_sta_fail;            /* consecutive connect failures */
+static uint8_t   s_sta_fail;            /* consecutive connect failures (saturates) */
+static uint8_t   s_auth_fail;           /* consecutive auth-class failures */
+static bool      s_ever_connected;      /* creds proven good at least once */
+static uint16_t  s_retry_in;            /* seconds until the next connect, 0 = idle */
+static uint16_t  s_ap_secs;             /* seconds the current portal has been idle */
+static bool      s_portal_sticky;       /* portal must not time out */
 static volatile bool s_want_provision;  /* deferred portal request -> wifi_tick() */
+static volatile bool s_want_sticky;     /* stickiness for the deferred request */
+
+static void provisioning_enter(bool sticky);
+
+/* Reasons that mean "the AP actively rejected our credentials". Deliberately
+ * excludes WIFI_REASON_AUTH_EXPIRE, which fires routinely on healthy networks.
+ * Note these are advisory: some APs report NO_AP_FOUND/ASSOC_FAIL for a bad
+ * password, which is exactly why the portal we open stays reversible. */
+static bool is_auth_failure(uint8_t reason)
+{
+    switch (reason) {
+    case WIFI_REASON_AUTH_FAIL:
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_MIC_FAILURE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static uint16_t backoff_for(uint8_t fails)
+{
+    const size_t n = sizeof(s_backoff_s) / sizeof(s_backoff_s[0]);
+    size_t i = (fails > 0) ? (size_t)(fails - 1) : 0;
+    return s_backoff_s[(i < n) ? i : (n - 1)];
+}
 
 static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
@@ -51,26 +112,47 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
                 esp_wifi_connect();
             }
             break;
-        case WIFI_EVENT_STA_DISCONNECTED:
+        case WIFI_EVENT_STA_DISCONNECTED: {
+            const wifi_event_sta_disconnected_t *e =
+                (const wifi_event_sta_disconnected_t *)data;
             s_connected = false;
             strcpy(s_ip, "0.0.0.0");
             if (!s_sta_active) {
                 break;   /* deliberate stop / switching to AP — don't fight it */
             }
-            if (++s_sta_fail < WIFI_STA_MAX_FAIL) {
-                /* Immediate retry; coex keeps BLE alive meanwhile. */
-                esp_wifi_connect();
-            } else {
-                /* Network unreachable/wrong — stop hammering and fall back to the
-                 * SoftAP captive portal so the user can re-provision. The mode
-                 * flip is deferred to wifi_tick() (main-task context); running
-                 * esp_wifi_stop()/start() here in the event loop can deadlock. */
-                ESP_LOGW(TAG, "STA failed %ux for \"%s\" - opening SoftAP portal",
-                         (unsigned)s_sta_fail, cfg_get()->wifi_ssid);
+            if (s_sta_fail < UINT8_MAX) {
+                s_sta_fail++;        /* saturate: we may retry for hours */
+            }
+            bool auth = is_auth_failure(e->reason);
+            if (auth && s_auth_fail < UINT8_MAX) {
+                s_auth_fail++;
+            }
+
+            /* The mode flip is deferred to wifi_tick() (main-task context);
+             * running esp_wifi_stop()/start() here in the event loop can
+             * deadlock. So is the reconnect, which gives us the backoff. */
+            if (s_auth_fail >= WIFI_AUTH_MAX_FAIL) {
+                /* Credentials rejected — retrying cannot help. Sticky portal. */
+                ESP_LOGW(TAG, "auth rejected %ux for \"%s\" (reason %u) — opening portal",
+                         (unsigned)s_auth_fail, cfg_get()->wifi_ssid, e->reason);
                 s_sta_active = false;
                 s_want_provision = true;
+                s_want_sticky = true;
+            } else if (!s_ever_connected && s_sta_fail >= WIFI_STA_MAX_FAIL) {
+                /* Never worked this boot (bad SSID?) — offer the portal, but let
+                 * it time out so a slow-to-return AP is still picked up. */
+                ESP_LOGW(TAG, "STA failed %ux for \"%s\" (reason %u) — opening portal",
+                         (unsigned)s_sta_fail, cfg_get()->wifi_ssid, e->reason);
+                s_sta_active = false;
+                s_want_provision = true;
+                s_want_sticky = false;
+            } else {
+                s_retry_in = backoff_for(s_sta_fail);
+                ESP_LOGI(TAG, "STA disconnect (reason %u), retry #%u in %us",
+                         e->reason, (unsigned)s_sta_fail, (unsigned)s_retry_in);
             }
             break;
+        }
         default:
             break;
         }
@@ -78,7 +160,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, voi
         ip_event_got_ip_t *e = (ip_event_got_ip_t *)data;
         esp_ip4addr_ntoa(&e->ip_info.ip, s_ip, sizeof(s_ip));
         s_connected = true;
-        s_sta_fail = 0;            /* clean connect — re-arm the fallback budget */
+        /* Clean connect — re-arm the budgets and remember these creds work, so
+         * a later outage retries forever instead of falling into the portal. */
+        s_sta_fail = 0;
+        s_auth_fail = 0;
+        s_retry_in = 0;
+        s_ever_connected = true;
         ESP_LOGI(TAG, "connected, ip=%s", s_ip);
     }
 }
@@ -111,10 +198,18 @@ void wifi_init(void)
     }
 }
 
+/* Public entry: a human (dashboard button) or the host MCU (HB_CMD_WIFI_SOFTAP)
+ * explicitly asked to reconfigure, so the portal must stay up until they finish. */
 void wifi_start_provisioning(void)
+{
+    provisioning_enter(true);
+}
+
+static void provisioning_enter(bool sticky)
 {
     if (s_ap_mode) {
         s_want_provision = false;
+        s_portal_sticky = s_portal_sticky || sticky;
         return;
     }
     /* Stop any running STA so we can flip the radio to AP cleanly. Clearing
@@ -122,6 +217,9 @@ void wifi_start_provisioning(void)
      * auto-reconnect us back out of AP mode. */
     s_sta_active = false;
     s_want_provision = false;
+    s_retry_in = 0;
+    s_ap_secs = 0;
+    s_portal_sticky = sticky;
     esp_wifi_stop();
     s_connected = false;
     strcpy(s_ip, "0.0.0.0");
@@ -146,7 +244,8 @@ void wifi_start_provisioning(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     s_ap_mode = true;
-    ESP_LOGI(TAG, "SoftAP \"%s\" up (open); join it to provision", ap.ap.ssid);
+    ESP_LOGI(TAG, "SoftAP \"%s\" up (open, %s); join it to provision",
+             ap.ap.ssid, sticky ? "stays up" : "times out if unused");
 
     provisioning_start();
 }
@@ -159,8 +258,10 @@ void wifi_start_sta(void)
         s_ap_mode = false;
     }
 
-    /* Fresh STA attempt: re-arm the failure budget and auto-reconnect. */
+    /* Fresh STA attempt: re-arm the failure budgets and auto-reconnect. */
     s_sta_fail = 0;
+    s_auth_fail = 0;
+    s_retry_in = 0;
     s_want_provision = false;
     s_sta_active = true;
 
@@ -183,6 +284,7 @@ void wifi_stop(void)
     /* Clear before esp_wifi_stop() so its STA_DISCONNECTED does not reconnect. */
     s_sta_active = false;
     s_want_provision = false;
+    s_retry_in = 0;
     if (s_ap_mode) {
         provisioning_stop();
         s_ap_mode = false;
@@ -192,13 +294,31 @@ void wifi_stop(void)
     esp_wifi_stop();
 }
 
-/* Consume a deferred SoftAP fallback requested by the Wi-Fi event handler after
- * WIFI_STA_MAX_FAIL connect failures. Called from the 1 Hz main loop, where the
- * esp_wifi mode flip is safe to run (unlike the event-loop task). */
+/* Wi-Fi scheduler, called once per second from the main loop — the context where
+ * esp_wifi mode flips and connects are safe to run (unlike the event-loop task).
+ * Drives three things: the backoff retry, the deferred portal open, and the
+ * idle-portal timeout that hands the radio back to STA. */
 void wifi_tick(void)
 {
-    if (s_want_provision && !s_ap_mode) {
-        wifi_start_provisioning();
+    if (s_ap_mode) {
+        if (s_portal_sticky || provisioning_had_client()) {
+            return;   /* someone is configuring, or the creds are known bad */
+        }
+        if (++s_ap_secs >= AP_PORTAL_TIMEOUT_S) {
+            ESP_LOGI(TAG, "portal idle %us — resuming STA for \"%s\"",
+                     (unsigned)s_ap_secs, cfg_get()->wifi_ssid);
+            wifi_start_sta();   /* tears the AP down, re-arms the budgets */
+        }
+        return;
+    }
+
+    if (s_want_provision) {
+        provisioning_enter(s_want_sticky);
+        return;
+    }
+
+    if (s_retry_in && --s_retry_in == 0) {
+        esp_wifi_connect();
     }
 }
 
