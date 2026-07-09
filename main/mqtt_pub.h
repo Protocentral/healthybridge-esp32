@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge ESP32-C3 — MQTT vitals publisher (E4c).
+ * HealthyBridge ESP32-C3 — MQTT vitals publisher.
  *
  * Optional, toggled by cfg->mqtt_enabled. When enabled and the STA link is up,
  * connects to cfg->mqtt_uri and publishes vitals/status JSON. All lifecycle is

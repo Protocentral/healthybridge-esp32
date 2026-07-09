@@ -52,13 +52,27 @@ plumbing are reusable with any UART host.
 
 ## Firmware features
 
-- **HealthyBridge link** — UART frame parser (`0xAA55` framing, CRC-16/CCITT) consuming vitals/waveforms/battery from the RP2040
-- **BLE (NimBLE)** — advertises as "HealthyPi 5"; standard Heart Rate service plus the custom HealthyPi ECG / PPG / SpO₂ / RR services, so the existing phone app works unchanged
-- **Wi-Fi STA** — connects with stored credentials; BLE/Wi-Fi share the single 2.4 GHz radio via software coexistence
-- **SoftAP captive-portal provisioning** — with no credentials, brings up an access point + DNS + HTTP form to onboard Wi-Fi, MQTT and dashboard settings, then reboots into STA
-- **MQTT publish** — streams vitals JSON to `healthypi5/<mac>/vitals` (toggleable, broker URI configurable)
-- **Local web dashboard** — live vitals page with Server-Sent-Events waveform streaming (ECG/PPG), settings form, and a re-provision button; advertised over mDNS at `http://healthypi.local`
-- **Command plane** — BLE / Wi-Fi / host commands routed to and from the RP2040; status reported back on the 1 Hz line
+- **HealthyBridge link** — UART frame parser (`0xAA55` framing, CRC-16/CCITT) consuming vitals/waveforms/battery from the host
+- **BLE (NimBLE)** — advertises as "HealthyPi 5"; four standard SIG services plus the custom HealthyPi waveform and command services, so the existing phone app works unchanged (see below)
+- **Wi-Fi STA** — connects with stored credentials, auto-reconnects, and falls back to the setup portal after repeated failures; BLE/Wi-Fi share the single 2.4 GHz radio via software coexistence
+- **SoftAP captive-portal provisioning** — with no credentials, brings up an open `HealthyPi-XXXX` access point + captive DNS + HTTP form to onboard Wi-Fi, MQTT and dashboard settings, then reboots into STA
+- **MQTT publish** — publishes vitals JSON (`hr`/`spo2`/`rr`/`temp`) to `healthypi5/<mac>/vitals` once per second (toggleable, broker URI configurable)
+- **Local web dashboard** — live vitals + Server-Sent-Events waveform streaming (ECG/PPG) with a JSON-poll fallback, battery / Wi-Fi RSSI / BLE status chips, lead-off warnings, a settings form and a re-provision button; advertised over mDNS at `http://healthypi.local`
+- **Command plane** — BLE / Wi-Fi / host commands routed to and from the host MCU; status reported back once per second
+
+### BLE service map
+
+Preserved verbatim from the legacy HealthyPi 5 firmware so existing clients keep working.
+
+| Service | UUID | Characteristics |
+|---|---|---|
+| Heart Rate | `0x180D` | Heart Rate Measurement `0x2A37` |
+| Battery | `0x180F` | Battery Level `0x2A19` |
+| Pulse Oximeter | `0x1822` | SpO₂ Spot-Check `0x2A5E` |
+| Health Thermometer | `0x1809` | Temperature `0x2A6E` |
+| ECG + Respiration | `00001122-…` (128-bit) | ECG `00001424-…`, Resp `babe4a4c-…` |
+| PPG + Resp-rate | `cd5c7491-…` (128-bit) | PPG `cd5c1525-…`, RR `cd5ca86f-…` |
+| Command | `01bf7492-…` (128-bit) | TX (write) `01bf1528-…`, RX (notify) `01bf1527-…` |
 
 ## Host UART link
 
@@ -144,9 +158,29 @@ idf.py -p <PORT> flash monitor      # e.g. -p /dev/ttyACM0  (Ctrl-] to exit moni
 ### First-time provisioning
 
 With no stored Wi-Fi credentials the device starts a **SoftAP captive portal** —
-join its access point and a form will open to enter your Wi-Fi SSID/password and
-toggle the MQTT and dashboard options. The device then reboots into station mode;
-the dashboard is reachable at **http://healthypi.local**.
+join its `HealthyPi-XXXX` access point and a form will open to enter your Wi-Fi
+SSID/password and toggle the MQTT and dashboard options. The device then reboots
+into station mode; the dashboard is reachable at **http://healthypi.local**.
+
+## Security considerations
+
+This firmware is designed for trusted local networks (lab benches, personal
+LANs). It is **not hardened for hostile or untrusted networks**:
+
+- The provisioning **SoftAP is an open network** (no password) so onboarding
+  needs no pre-shared key. Anyone in radio range during provisioning can join it
+  and submit the form. Provision somewhere you trust.
+- Neither the **captive portal nor the dashboard has authentication**. Any host
+  on the same network can read vitals, change MQTT/dashboard settings, and
+  trigger a Wi-Fi re-provision. Both serve plain **HTTP**, not HTTPS.
+- **Wi-Fi credentials are stored unencrypted in NVS.** Enable NVS encryption
+  (and flash encryption) if physical access to the board is a concern.
+- **MQTT** connects with whatever the broker URI specifies; `mqtt://` is
+  unencrypted. Use `mqtts://` with a broker that supports TLS if the vitals
+  stream leaves your network.
+- Leave `HB_WIFI_DEFAULT_SSID`/`HB_WIFI_DEFAULT_PASS` in [`main/cfg.h`](main/cfg.h)
+  **empty** in anything you build for others — they are a bench-testing
+  convenience that bakes credentials into the binary.
 
 ## Documentation
 

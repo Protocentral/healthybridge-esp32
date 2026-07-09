@@ -1,14 +1,12 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge ESP32-C3 — local web dashboard (E4d).
+ * HealthyBridge ESP32-C3 — local web dashboard.
  *
  * Optional, toggled by cfg->dashboard_enabled. When enabled and the STA link is
  * up, serves a live vitals page + settings form on the device's STA IP (port
- * 80). Mutually exclusive with the SoftAP captive portal (provisioning), which
- * only runs in AP mode. Driven from the 1 Hz main loop via dashboard_tick().
- *
- * First cut is vitals-only (JSON poll); waveform streaming is deferred pending
- * data_store ring buffers.
+ * 80). Waveforms stream over Server-Sent Events, with a JSON-poll fallback.
+ * Mutually exclusive with the SoftAP captive portal (provisioning), which only
+ * runs in AP mode. Driven from the 1 Hz main loop via dashboard_tick().
  */
 #ifndef DASHBOARD_H
 #define DASHBOARD_H

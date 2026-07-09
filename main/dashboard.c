@@ -1,9 +1,10 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge ESP32-C3 — local web dashboard (E4d) implementation.
+ * HealthyBridge ESP32-C3 — local web dashboard implementation.
  */
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -263,6 +264,27 @@ static esp_err_t waveform_get(httpd_req_t *req)
 
 /* ---- SSE live stream (vitals + incremental waveform @ 8 Hz) -------------- */
 
+/* Append at *o, clamping to sz. snprintf() returns the length it *would* have
+ * written, so accumulating it unclamped can push *o past the end of buf and make
+ * the next (sz - *o) underflow. */
+static void sse_append(char *buf, size_t sz, int *o, const char *fmt, ...)
+{
+    if (*o < 0 || (size_t)*o >= sz) {
+        return;
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(buf + *o, sz - *o, fmt, ap);
+    va_end(ap);
+    if (n < 0) {
+        return;
+    }
+    *o += n;
+    if ((size_t)*o >= sz) {
+        *o = (int)sz - 1;   /* output was truncated — stay in bounds */
+    }
+}
+
 /* Build one SSE event into buf; returns its length. Sends only waveform
  * samples newer than *sent (capped at SSE_CHUNK) so the client scrolls
  * smoothly instead of re-fetching a whole window. */
@@ -291,20 +313,21 @@ static int sse_build(char *buf, size_t sz, uint32_t *sent)
     size_t np = want ? data_store_get_wave(DS_CH_PPG, ppg, want) : 0;
     *sent = cur;
 
-    int o = snprintf(buf, sz,
+    int o = 0;
+    sse_append(buf, sz, &o,
         "data: {\"hr\":%u,\"spo2\":%u,\"rr\":%u,\"temp\":%d,\"flags\":%u,"
         "\"ble\":%d,\"mqtt\":%d,\"wifi\":%d,\"rssi\":%s,\"bat\":%s,\"chg\":%d,\"e\":[",
         v.hr, v.spo2, v.rr, v.temp_c_x100, v.flags,
         ble_gatt_is_connected() ? 1 : 0, mqtt_pub_is_connected() ? 1 : 0,
         wifi_is_connected() ? 1 : 0, rssi, bat, (bv && chg) ? 1 : 0);
     for (size_t i = 0; i < ne && o < (int)sz - 16; i++) {
-        o += snprintf(buf + o, sz - o, "%s%ld", i ? "," : "", (long)ecg[i]);
+        sse_append(buf, sz, &o, "%s%ld", i ? "," : "", (long)ecg[i]);
     }
-    o += snprintf(buf + o, sz - o, "],\"p\":[");
+    sse_append(buf, sz, &o, "],\"p\":[");
     for (size_t i = 0; i < np && o < (int)sz - 16; i++) {
-        o += snprintf(buf + o, sz - o, "%s%ld", i ? "," : "", (long)ppg[i]);
+        sse_append(buf, sz, &o, "%s%ld", i ? "," : "", (long)ppg[i]);
     }
-    o += snprintf(buf + o, sz - o, "]}\n\n");
+    sse_append(buf, sz, &o, "]}\n\n");
     return o;
 }
 

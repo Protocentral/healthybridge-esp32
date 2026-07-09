@@ -15,7 +15,7 @@ void wifi_init(void);
 /* (Re)connect STA using the current cfg credentials. */
 void wifi_start_sta(void);
 
-/* Bring up the SoftAP captive portal (E4b) for on-device provisioning. */
+/* Bring up the SoftAP captive portal for on-device provisioning. */
 void wifi_start_provisioning(void);
 
 /* Service deferred Wi-Fi work; call once per second from the main loop. Opens

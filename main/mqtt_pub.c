@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge ESP32-C3 — MQTT vitals publisher (E4c) implementation.
+ * HealthyBridge ESP32-C3 — MQTT vitals publisher implementation.
  */
 #include <string.h>
 #include <stdio.h>

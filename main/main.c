@@ -4,13 +4,13 @@
  *
  * HealthyBridge — ESP32-C3 BLE/Wi-Fi co-processor, app entry.
  *
- * Ingests HealthyBridge frames from the RP2040 (app_gf) over UART1 and
- * re-exposes vitals over BLE. The RP2040 owns all acquisition/DSP; this MCU is
- * pure connectivity.
+ * Ingests HealthyBridge frames from the host MCU over UART1 and re-exposes them
+ * over BLE, Wi-Fi, MQTT and a local web dashboard. The host owns all
+ * acquisition/DSP; this MCU is pure connectivity.
  *
- *   RP2040 ──UART1 921600 RTS/CTS──▶ hb_link (parse) ─▶ data_store
- *                                                         │
- *                                            BLE notify ◀─┘  (and Wi-Fi later)
+ *   host ──UART1 921600 RTS/CTS──▶ hb_link (parse) ─┬─▶ ble_gatt (notify)
+ *                                                   └─▶ data_store ─┬─▶ mqtt_pub
+ *                                                                   └─▶ dashboard
  */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -51,23 +51,22 @@ void app_main(void)
     mqtt_pub_init();     /* optional vitals publish (cfg->mqtt_enabled) */
     dashboard_init();    /* optional local web dashboard (cfg->dashboard_enabled) */
 
-    /* Connectivity loop: push the latest vitals to BLE subscribers and report
-     * link status back to the RP2040 once per second. Waveform (ECG/PPG)
-     * notifications are added in E2 with proper decimation/batching. */
+    /* Connectivity service loop, 1 Hz. BLE notifications (vitals, waveforms,
+     * battery, command responses) are pushed straight from the hb_link RX path
+     * via ble_gatt_on_*; this loop only drives the pull-side subsystems and
+     * reports link status back to the host. */
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
 
         struct hb_vitals_payload v;
         data_store_get_vitals(&v);
-        /* Notifications are pushed from the hb_link RX path (ble_gatt_on_*);
-         * this loop only reports link/vitals state to the console. */
 
         wifi_tick();         /* opens SoftAP portal after repeated STA failures */
         mqtt_pub_tick(&v);   /* publishes only when enabled + Wi-Fi up */
         dashboard_tick();    /* serves only when enabled + Wi-Fi up (STA) */
 
-        uint32_t rx_bytes, rx_biosig, rx_vitals, rx_crc;
-        hb_link_get_stats(&rx_bytes, &rx_biosig, &rx_vitals, &rx_crc);
+        uint32_t rx_biosig, rx_vitals, rx_crc;
+        hb_link_get_stats(NULL, &rx_biosig, &rx_vitals, &rx_crc);
         char ip[16];
         wifi_get_ip(ip, sizeof(ip));
 

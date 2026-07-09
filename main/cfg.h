@@ -12,8 +12,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/* Optional compile-time Wi-Fi creds used ONLY when NVS has none (handy for E4a
- * testing before the SoftAP captive portal exists). Leave empty in production. */
+/* Optional compile-time Wi-Fi creds used ONLY when NVS has none (handy for
+ * bench testing, to skip the SoftAP portal). Leave empty in production. */
 #define HB_WIFI_DEFAULT_SSID ""
 #define HB_WIFI_DEFAULT_PASS ""
 

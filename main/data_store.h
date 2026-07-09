@@ -28,8 +28,6 @@ void data_store_push_biosig(const struct hb_biosig_payload *b);
 
 /* Readers (from BLE/Wi-Fi). */
 void data_store_get_vitals(struct hb_vitals_payload *out);
-/* Latest single biosignal sample (for low-rate notify). */
-void data_store_get_last_sample(struct hb_biosig_sample *out);
 
 /* Copy the most-recent samples of one waveform channel into out (oldest-first).
  * Returns the number copied (<= min(max_samples, DS_WAVE_LEN, available)). */

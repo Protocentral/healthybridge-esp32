@@ -17,7 +17,6 @@ struct ds_wave {
 
 static SemaphoreHandle_t s_lock;
 static struct hb_vitals_payload   s_vitals;
-static struct hb_biosig_sample    s_last_sample;
 static struct ds_wave             s_wave[DS_CH_N];
 static uint16_t                   s_wave_rate;
 static bool                       s_batt_valid;
@@ -29,7 +28,6 @@ void data_store_init(void)
 {
     s_lock = xSemaphoreCreateMutex();
     memset(&s_vitals, 0, sizeof(s_vitals));
-    memset(&s_last_sample, 0, sizeof(s_last_sample));
     memset(s_wave, 0, sizeof(s_wave));
     s_wave_rate = 0;
 }
@@ -54,7 +52,6 @@ void data_store_push_biosig(const struct hb_biosig_payload *b)
         return;
     }
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    s_last_sample = b->samples[b->sample_count - 1];
     if (b->sample_rate_hz) {
         s_wave_rate = b->sample_rate_hz;
     }
@@ -70,13 +67,6 @@ void data_store_get_vitals(struct hb_vitals_payload *out)
 {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     *out = s_vitals;
-    xSemaphoreGive(s_lock);
-}
-
-void data_store_get_last_sample(struct hb_biosig_sample *out)
-{
-    xSemaphoreTake(s_lock, portMAX_DELAY);
-    *out = s_last_sample;
     xSemaphoreGive(s_lock);
 }
 

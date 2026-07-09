@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge ESP32-C3 — SoftAP captive-portal provisioning (E4b).
+ * HealthyBridge ESP32-C3 — SoftAP captive-portal provisioning.
  *
  * Brings up a SoftAP ("HealthyPi-XXXX"), a captive DNS responder (every A
  * query → the AP gateway, so the phone pops the portal), and an HTTP server
@@ -21,7 +21,5 @@ void provisioning_start(void);
 
 /* Stop both servers. Idempotent. */
 void provisioning_stop(void);
-
-bool provisioning_is_active(void);
 
 #endif /* PROVISIONING_H */

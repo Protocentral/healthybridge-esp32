@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge ESP32-C3 — BLE GATT (NimBLE peripheral), E2 full GATT.
+ * HealthyBridge ESP32-C3 — BLE GATT (NimBLE peripheral).
  *
  * Recreates the HealthyPi 5 BLE services/characteristics from the legacy
  * app/src/ble_module.c with the SAME UUIDs and notify byte formats so an
@@ -21,7 +21,6 @@
  */
 #include <string.h>
 #include "esp_log.h"
-#include "nvs_flash.h"
 
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
@@ -49,7 +48,7 @@ static const ble_uuid128_t uuid_ppg_chr = BLE_UUID128_INIT(
     0xd0,0x36,0xba,0x8c,0xda,0xd1,0x4c,0xae,0xb8,0x7d,0x48,0x44,0x25,0x15,0x5c,0xcd);
 static const ble_uuid128_t uuid_rr_chr = BLE_UUID128_INIT(
     0xd0,0x36,0xba,0x8c,0xda,0xd1,0x4c,0xae,0xb8,0x7d,0x48,0x44,0x6f,0xa8,0x5c,0xcd);
-/* Command service (E3): phone writes TX, device notifies RX. */
+/* Command service: phone writes TX, device notifies RX. */
 static const ble_uuid128_t uuid_cmd_svc = BLE_UUID128_INIT(
     0xdc,0xad,0x7f,0xc4,0x23,0x90,0x4d,0xd4,0x96,0x8d,0x0f,0x97,0x92,0x74,0xbf,0x01);
 static const ble_uuid128_t uuid_cmd_tx = BLE_UUID128_INIT(
@@ -252,6 +251,11 @@ void ble_gatt_on_biosig(const struct hb_biosig_payload *b)
     }
 }
 
+void ble_gatt_on_battery(uint8_t soc)
+{
+    hpi_notify(CH_BAT, &soc, sizeof(soc));
+}
+
 /* ---- Advertising ---- */
 void ble_gatt_start_adv(void)
 {
@@ -282,12 +286,6 @@ void ble_gatt_set_name(const char *name)
     s_dev_name[sizeof(s_dev_name) - 1] = '\0';
     ble_svc_gap_device_name_set(s_dev_name);
     if (s_advertising) { ble_gatt_stop_adv(); ble_gatt_start_adv(); }
-}
-
-void ble_gatt_notify_hr(uint16_t hr)
-{
-    uint8_t v[2] = { 0x00, (uint8_t)hr };
-    hpi_notify(CH_HR, v, sizeof(v));
 }
 
 /* ---- GAP events ---- */

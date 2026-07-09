@@ -4,8 +4,8 @@
  *
  * Connects in station mode using the stored credentials and coexists with
  * NimBLE on the single 2.4 GHz radio (software coexistence, enabled in
- * sdkconfig). Auto-reconnects on disconnect. SoftAP captive-portal provisioning
- * is added in E4b (wifi_start_provisioning); E4a is STA-only.
+ * sdkconfig). Auto-reconnects on disconnect; after WIFI_STA_MAX_FAIL consecutive
+ * failures it falls back to the SoftAP captive portal (wifi_start_provisioning).
  */
 #include <string.h>
 #include "freertos/FreeRTOS.h"

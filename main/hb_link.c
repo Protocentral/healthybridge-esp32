@@ -24,7 +24,7 @@
 static const char *TAG = "hb_link";
 
 /* RX instrumentation — proves the link is actually delivering frames. */
-static volatile uint32_t s_rx_bytes, s_rx_biosig, s_rx_vitals, s_rx_ctrl, s_rx_crc_err;
+static volatile uint32_t s_rx_bytes, s_rx_biosig, s_rx_vitals, s_rx_crc_err;
 
 void hb_link_get_stats(uint32_t *bytes, uint32_t *biosig, uint32_t *vitals, uint32_t *crc_err)
 {
@@ -77,7 +77,7 @@ int hb_link_send(uint8_t type, uint8_t flags, const uint8_t *payload, uint16_t l
 }
 
 /* RX frame parser state machine. */
-static void hb_dispatch(uint8_t type, const uint8_t *post_sync, const uint8_t *payload, uint16_t len)
+static void hb_dispatch(uint8_t type, const uint8_t *payload, uint16_t len)
 {
     switch (type) {
     case HB_TYPE_VITALS:
@@ -102,10 +102,10 @@ static void hb_dispatch(uint8_t type, const uint8_t *post_sync, const uint8_t *p
                 (const struct hb_battery_payload *)payload;
             data_store_set_battery(bp->soc, bp->flags & HB_BATT_CHARGING,
                                    bp->millivolts);
+            ble_gatt_on_battery(bp->soc);
         }
         break;
     case HB_TYPE_CTRL_CMD:
-        s_rx_ctrl++;
         if (len >= 1) {
             control_handle_cmd(payload, len);
         }
@@ -169,7 +169,7 @@ static void hb_rx_task(void *arg)
                 uint16_t calc = hb_crc16_ccitt(0xFFFF, hdr6, 6);
                 calc = hb_crc16_ccitt(calc, payload, len);
                 if (rx == calc) {
-                    hb_dispatch(hdr6[0], hdr6, payload, len);
+                    hb_dispatch(hdr6[0], payload, len);
                 } else {
                     s_rx_crc_err++;
                     ESP_LOGW(TAG, "CRC mismatch type=0x%02x len=%u", hdr6[0], len);
