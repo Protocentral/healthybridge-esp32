@@ -19,7 +19,7 @@
   <!-- ===================== RP2040 (separate repo) ===================== -->
   <rect x="20" y="20" width="680" height="68" rx="10" fill="#FFF7ED" stroke="#FB923C" stroke-width="1.5"/>
   <text x="40" y="46" class="band-title" fill="#C2410C">HealthyPi 5 — RP2040 Main MCU</text>
-  <text x="40" y="68" class="desc" fill="#7C2D12">biosignal acquisition + DSP · ships in the healthypi5_next_rp2040 repo</text>
+  <text x="40" y="68" class="desc" fill="#7C2D12">biosignal acquisition + DSP · ships in the protocentral_healthypi_5_firmware repo</text>
 
   <!-- HealthyBridge link pill -->
   <path d="M360,88 L360,98" class="bus" marker-end="url(#arrow)"/>

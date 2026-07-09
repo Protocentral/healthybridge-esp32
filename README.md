@@ -9,7 +9,7 @@
 >
 > It was developed primarily to add wireless connectivity to the dual-MCU
 > **HealthyPi 5 NEXT** board (where the RP2040 Main MCU, separate repo
-> [Protocentral/healthypi5_next_rp2040](https://github.com/Protocentral/healthypi5_next_rp2040),
+> [Protocentral/protocentral_healthypi_5_firmware](https://github.com/Protocentral/protocentral_healthypi_5_firmware),
 > is the UART host), but it is **not tied to HealthyPi** — any project that needs
 > to add BLE/Wi-Fi connectivity to a UART host can use it.
 
@@ -35,7 +35,7 @@ is unaffected.
 
 The **reference application** is the [ProtoCentral HealthyPi 5](https://protocentral.com/product/healthypi-5-vital-signs-monitoring-hat-kit/)
 biosignal monitoring board (the **HealthyPi 5 NEXT** firmware), where the
-[RP2040 Main MCU](https://github.com/Protocentral/healthypi5_next_rp2040) owns all
+[RP2040 Main MCU](https://github.com/Protocentral/protocentral_healthypi_5_firmware) owns all
 acquisition and DSP and streams vitals and waveforms across the link. The parts
 below describe that application; only the payload set (vitals/ECG/PPG) and the
 BLE service map are HealthyPi-specific — the framing, transport and connectivity
@@ -187,7 +187,7 @@ LANs). It is **not hardened for hostile or untrusted networks**:
 The HealthyBridge wire protocol, the BLE service map, and the Wi-Fi / MQTT /
 dashboard design notes live under [`docs/`](docs/). The companion Main-MCU
 firmware is at
-[Protocentral/healthypi5_next_rp2040](https://github.com/Protocentral/healthypi5_next_rp2040).
+[Protocentral/protocentral_healthypi_5_firmware](https://github.com/Protocentral/protocentral_healthypi_5_firmware).
 
 ## Licensing
 

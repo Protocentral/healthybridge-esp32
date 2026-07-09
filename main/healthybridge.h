@@ -4,10 +4,10 @@
  *
  * HealthyBridge — SHARED protocol contract (RP2040 <-> ESP32-C3).
  *
- * THIS FILE MUST STAY BYTE-IDENTICAL to app_gf/src/healthybridge.h (the
- * protocol section). Both MCUs are little-endian, so the packed structs are
- * wire-compatible. Keep them in sync (copy or git submodule); do not edit one
- * without the other.
+ * THIS FILE MUST STAY BYTE-IDENTICAL to the Main-MCU firmware's copy of
+ * healthybridge.h (the protocol section). Both MCUs are little-endian, so the
+ * packed structs are wire-compatible. Keep them in sync (copy or git
+ * submodule); do not edit one without the other.
  *
  * Frame (little-endian):
  *   SYNC(0xAA55) | TYPE | FLAGS | LENGTH(2) | SEQ(2) | PAYLOAD | CRC16-CCITT(2)
