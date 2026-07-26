@@ -34,10 +34,17 @@ struct hb_transport_if {
 /* The active transport for this build. */
 const struct hb_transport_if *hb_transport_get(void);
 
-/* SPI backend only (HP6). Slave->master responses handed to the transaction
- * queue, and responses dropped because the ring filled (the master stopped
- * clocking). Not defined in a UART build. */
+/* SPI backend only. Slave->master responses handed to the transaction queue,
+ * and responses dropped because the ring filled (the master stopped clocking).
+ * Not defined in a UART build — guard calls on CONFIG_HB_TRANSPORT_SPI, not on
+ * the product profile. */
 void hb_transport_spi_tx_stats(uint32_t *sent, uint32_t *drops);
+
+/* UART backend only. Bytes waiting in the RX ring, and the level of the CTS
+ * input (the host's permission for us to transmit). Together these separate a
+ * dead link from one the flow control is deliberately throttling — both of
+ * which show rx= flat. Not defined in an SPI build. */
+void hb_transport_uart_flow(uint32_t *rx_queued, int *cts_level);
 
 #ifdef __cplusplus
 }

@@ -21,28 +21,41 @@ static const char *TAG = "control";
 /*
  * Acknowledge a command, optionally with response data.
  *
- * HP6: the M7 blocks in healthybridge_spi_send_cmd() until a CTRL_RESP whose
- * cmd_id matches arrives, so *every* command must be answered — an unanswered
- * one costs the M7 its full timeout on the bus-consumer thread, and it holds
- * spi_lock throughout. The payload shape is the one the M7 has always parsed
- * (hb_ctrl_resp_hp6): header, then `data_len` bytes the caller asked for.
+ * HP6: the M7 blocks in its send_cmd() until a CTRL_RESP whose cmd_id matches
+ * arrives, so *every* command must be answered — an unanswered one costs the M7
+ * its full timeout on the bus-consumer thread. The payload shape is the one the
+ * M7 has always parsed (hb_ctrl_resp_hp6): header, then `data_len` bytes the
+ * caller asked for.
  *
  * HP5: unchanged and frozen — the RP2040 expects the bare 1-byte PING echo and
  * no ack for anything else, so this is a no-op there.
  */
 #if defined(CONFIG_HB_PROFILE_HP6)
-/* Ceiling on data[]: the SPI TX ring slot is 64 B and the frame costs
- * 8 (frame header) + 4 (hb_ctrl_resp_hp6) + 2 (CRC) = 14 B of that. Widen
- * HB_SPI_TX_FRAME_MAX before exceeding this, or spi_send() will reject the
- * frame outright and the M7 will time out. */
+/*
+ * Ceiling on data[]. Transport-scoped, because only one of the two links has a
+ * per-frame budget worth naming:
+ *
+ *   SPI  — the TX ring slot is HB_SPI_TX_FRAME_MAX (64 B), of which the frame
+ *          header (8), this response header (4) and the CRC (2) take 14. Exceed
+ *          the remainder and spi_send() rejects the frame outright, which the M7
+ *          experiences as a timeout. Widen HB_SPI_TX_FRAME_MAX first.
+ *   UART  — no slot; a write is just bytes. The cap is a sanity bound on the
+ *          stack buffer below, sized well clear of anything a status reply needs
+ *          and still far under HB_CODEC_MAX_PAYLOAD.
+ */
+#if defined(CONFIG_HB_TRANSPORT_SPI)
 #define CTRL_ACK_MAX_DATA 50
+#else
+#define CTRL_ACK_MAX_DATA 200
+#endif
 
 /* The budget above is only meaningful if it is enforced at build time. The
  * runtime check in control_ack_data() catches a dynamic length; this catches the
  * one payload we know statically, so widening the struct fails the build instead
  * of degrading to a bare ack on hardware. */
 _Static_assert(sizeof(struct hb_wifi_status_resp_hp6) <= CTRL_ACK_MAX_DATA,
-               "hp6 wifi status no longer fits a CTRL_RESP — widen HB_SPI_TX_FRAME_MAX");
+               "hp6 wifi status no longer fits a CTRL_RESP — raise CTRL_ACK_MAX_DATA "
+               "(and HB_SPI_TX_FRAME_MAX if the SPI transport is selected)");
 
 static void control_ack_data(uint8_t cmd, uint8_t status,
                              const void *data, uint16_t data_len)
@@ -77,25 +90,28 @@ static void control_ack(uint8_t cmd, uint8_t status)
 
 /*
  * Unsolicited link/BLE/Wi-Fi status (type 0x61), pushed at 1 Hz from the main
- * loop.
+ * loop. Whether this goes out is a question about the TRANSPORT, not the
+ * product: it asks whether the host is listening when it did not ask.
  *
- * HP5: as released and frozen — the RP2040 reads the UART continuously, so an
- * unsolicited frame reaches it.
+ * UART (both products): sent. A host reading its UART continuously receives an
+ * unsolicited frame like any other. On HP5 this is the released, frozen path.
+ * On HP6 the M7 must have a case for 0x61 to act on it; until then it costs one
+ * 14-byte frame per second on a 20 %-utilised link and is counted as an unknown
+ * type at the far end. The richer answer is still GET_STATUS, whose ack carries
+ * the full 38-byte Wi-Fi struct — see control_ack_wifi_status().
  *
- * HP6: deliberately nothing. The M7 sends every data frame with spi_write() and
- * no RX buffer, so it samples MISO *only* inside healthybridge_spi_send_cmd() —
- * its transceive plus the 5 ms STATUS_REQ polls. A 0x61 frame the ESP emits on
- * its own is clocked out and discarded unread. Emitting it anyway would burn one
- * of the 4 TX ring slots every second on a frame with no reader, and could delay
- * a real CTRL_RESP the M7 is blocking on. The M7's route to this information is
- * GET_STATUS, answered in the ack — see control_ack_wifi_status().
+ * SPI (HP6): suppressed. The M7 pushes every data frame with spi_write() and no
+ * RX buffer, so it samples MISO *only* inside its send_cmd() — the transceive
+ * plus the 5 ms STATUS_REQ polls. A frame the ESP emits on its own is clocked
+ * out and discarded unread, so sending one would burn a TX ring slot every
+ * second and could delay a real CTRL_RESP the M7 is blocking on.
  *
  * Kept as a no-op rather than #if'd out at the call site so main.c needs no
- * profile knowledge and the reasoning lives in one place.
+ * transport knowledge and the reasoning lives in one place.
  */
 void control_send_status(void)
 {
-#if !defined(CONFIG_HB_PROFILE_HP6)
+#if !defined(CONFIG_HB_TRANSPORT_SPI)
     struct hb_status_payload s = {
         .ble_advertising = ble_gatt_is_advertising() ? 1 : 0,
         .ble_connected   = ble_gatt_is_connected()   ? 1 : 0,

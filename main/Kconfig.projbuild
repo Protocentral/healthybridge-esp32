@@ -7,15 +7,27 @@ choice HB_TRANSPORT
       Physical link to the host MCU. Exactly one backend is compiled.
 
 config HB_TRANSPORT_UART
-    bool "UART (HealthyPi 5 / RP2040, ESP32-C3)"
+    bool "UART, HW RTS/CTS"
     help
-      Framed UART @ 921600 8N1 with HW RTS/CTS. The released HealthyPi 5 profile.
+      Framed UART 8N1 with hardware flow control. The transport for BOTH
+      products: HealthyPi 5 (RP2040 <-> ESP32-C3 @ 921600, released) and
+      HealthyPi 6 (STM32 M7 UART4 <-> ESP32-C6, see HB_UART_BAUD_HP6).
+
+      Flow control is what makes this the default. When the ESP cannot keep up,
+      RTS de-asserts and the host's transmitter halts at a byte boundary in
+      hardware — the link back-pressures instead of losing frames.
 
 config HB_TRANSPORT_SPI
-    bool "SPI slave (HealthyPi 6 / STM32 M7, ESP32-C6)"
+    bool "SPI slave (HealthyPi 6, superseded)"
     help
-      FSPI (SPI2) slave with DMA. HealthyPi 6 profile. Not yet verified on C6
-      hardware.
+      FSPI (SPI2) slave with DMA, for the HealthyPi 6 host. Superseded by the
+      UART transport and kept only so the two can be compared on a board that
+      wires both.
+
+      An ESP32 SPI slave must have a transaction pre-queued before the master
+      asserts CS. On the single-core C6 a Wi-Fi burst means it sometimes is not,
+      and the master then clocks into a slave with no buffer: the frame is lost
+      and the master still reports success. Do not select this for new work.
 
 endchoice
 
@@ -34,6 +46,22 @@ config HB_PROFILE_HP6
     bool "HealthyPi 6 (32-byte multi-channel sample)"
 
 endchoice
+
+config HB_UART_BAUD_HP6
+    int "HealthyPi 6 host-link baud"
+    depends on HB_TRANSPORT_UART && HB_PROFILE_HP6
+    default 921600
+    help
+      Baud for the HealthyPi 6 UART link. Must match the M7's UART4.
+
+      HealthyPi 5's rate is fixed at 921600 by the frozen wire contract
+      (HB_UART_BAUD in healthybridge.h) and is not configurable here.
+
+      Bring a board up at 921600 first — it is bit-identical to the released
+      HealthyPi 5 configuration, so a failure there is unambiguously an HP6
+      problem. 2000000 is the intended steady state: it divides exactly on both
+      ends (C6 PLL_F80M 80 MHz / 40; STM32 PCLK1 100 MHz / 50), so there is no
+      baud error, and the offered load is only ~19 kB/s either way.
 
 comment "HP6-only consumers (BLE / Wi-Fi / dashboard / MQTT stay shared)"
 

@@ -1,10 +1,20 @@
 /*
  * SPDX-License-Identifier: MIT
- * HealthyBridge transport backend — UART (HealthyPi 5, ESP32-C3 <-> RP2040).
+ * HealthyBridge transport backend — UART, both products.
  *
- * UART1 @ 921600 8N1, HW RTS/CTS. Received bytes are pushed straight into the
- * codec sink; framing/CRC live in hb_codec. This is the transport half of the
- * original hb_link.c, with the parser and dispatch factored out.
+ *   HealthyPi 5: ESP32-C3 <-> RP2040, UART1 @ 921600 8N1, HW RTS/CTS.
+ *   HealthyPi 6: ESP32-C6 <-> STM32H757 M7 UART4, same framing, own pins/baud.
+ *
+ * Received bytes are pushed straight into the codec sink; framing and CRC live
+ * in hb_codec, which is transport-independent. Do NOT call hb_codec_reset() in
+ * this path: UART is a byte stream, and resetting mid-stream would break
+ * reassembly of a frame that spans two reads. (The SPI backend does reset per
+ * transaction, because SPI is message-framed. That difference is the reason the
+ * codec owns framing and the transport does not.)
+ *
+ * The HP6 sizing differs from HP5 in three places, all because HP6's offered
+ * load is ~8.4x higher: a larger RX ring, an earlier RTS threshold, and a TX
+ * ring so an unsolicited send cannot block its caller on a de-asserted CTS.
  */
 #include "sdkconfig.h"
 
@@ -14,17 +24,52 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/uart.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
 
 #include "healthybridge.h"
 #include "hb_transport.h"
+
+#if defined(CONFIG_HB_PROFILE_HP6)
+#include "board_pins_hp6.h"
+#else
 #include "board_pins_hp5.h"
+#endif
 
 static const char *TAG = "hb_uart";
 
 #define HB_UART_PORT     ((uart_port_t)HB_UART_PORT_NUM)
-#define HB_UART_RX_BUF   2048
 #define HB_RX_CHUNK      128
+
+#if defined(CONFIG_HB_PROFILE_HP6)
+/*
+ * HP6 sizing.
+ *
+ * RX ring: 8192, four times HP5's. At ~19 kB/s offered load that is ~430 ms of
+ * buffering — enough to ride out a consumer stall (a slow OpenView TCP send, a
+ * BLE connection event) without ever de-asserting RTS in normal operation.
+ *
+ * Flow-control threshold: the RTS de-assert point on the 128-byte hardware FIFO.
+ * HP5 uses 122, which leaves 6 bytes of slack — at 2 Mbaud the host needs more
+ * than 6 byte-times' notice to stop, so this drops to 100.
+ *
+ * TX ring: the ESP now transmits unprompted (control responses, status). With
+ * tx_buffer_size = 0, uart_write_bytes() blocks the calling task until every
+ * byte reaches the FIFO — and if the M7 has de-asserted our CTS, that is
+ * unbounded. A ring lets the write copy and return, so a back-pressuring host
+ * cannot stall the dispatch worker.
+ */
+#define HB_UART_BAUD_ACTIVE  CONFIG_HB_UART_BAUD_HP6
+#define HB_UART_RX_BUF       8192
+#define HB_UART_TX_BUF       1024
+#define HB_UART_FLOW_THRESH  100
+#else
+/* HP5: exactly as released. HB_UART_BAUD is the frozen wire contract. */
+#define HB_UART_BAUD_ACTIVE  HB_UART_BAUD
+#define HB_UART_RX_BUF       2048
+#define HB_UART_TX_BUF       0
+#define HB_UART_FLOW_THRESH  122
+#endif
 
 static hb_rx_sink_fn s_sink;
 static void         *s_sink_user;
@@ -60,18 +105,47 @@ static void hb_rx_task(void *arg)
     }
 }
 
+/*
+ * Flow-control state, for the status line.
+ *
+ * SPI gave one diagnostic for free that UART does not: there, a dead link read
+ * as rx=0B and nothing else could produce that. Here a link stalled by our own
+ * RTS also shows rx flat, and the two call for opposite responses. So report
+ * what the ring and the flow-control lines are actually doing:
+ *
+ *   rx_q   bytes waiting in the RX ring. Climbing toward HB_UART_RX_BUF means
+ *          the consumers are the bottleneck and RTS is about to throttle the
+ *          host — the link is healthy and being deliberately slowed.
+ *   cts    the host's permission for US to transmit. 0 = the M7 has stopped us.
+ *
+ * RTS is peripheral-driven and not readable as a level, so a de-assert is
+ * inferred from rx_q rather than sampled; IO20 on a scope is the direct check.
+ */
+void hb_transport_uart_flow(uint32_t *rx_queued, int *cts_level)
+{
+    if (rx_queued) {
+        size_t q = 0;
+        *rx_queued = (uart_get_buffered_data_len(HB_UART_PORT, &q) == ESP_OK)
+                         ? (uint32_t)q : 0;
+    }
+    if (cts_level) {
+        *cts_level = gpio_get_level(HB_UART_PIN_CTS);
+    }
+}
+
 static int uart_init(void)
 {
     uart_config_t cfg = {
-        .baud_rate = HB_UART_BAUD,
+        .baud_rate = HB_UART_BAUD_ACTIVE,
         .data_bits = UART_DATA_8_BITS,
         .parity    = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
         .flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS,
-        .rx_flow_ctrl_thresh = 122,
+        .rx_flow_ctrl_thresh = HB_UART_FLOW_THRESH,
         .source_clk = UART_SCLK_DEFAULT,
     };
-    ESP_ERROR_CHECK(uart_driver_install(HB_UART_PORT, HB_UART_RX_BUF, 0, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_driver_install(HB_UART_PORT, HB_UART_RX_BUF,
+                                        HB_UART_TX_BUF, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(HB_UART_PORT, &cfg));
     ESP_ERROR_CHECK(uart_set_pin(HB_UART_PORT, HB_UART_PIN_TX, HB_UART_PIN_RX,
                                  HB_UART_PIN_RTS, HB_UART_PIN_CTS));
@@ -81,7 +155,7 @@ static int uart_init(void)
         return -1;
     }
     ESP_LOGI(TAG, "UART%d up @ %d (TX%d RX%d RTS%d CTS%d)",
-             HB_UART_PORT_NUM, HB_UART_BAUD, HB_UART_PIN_TX, HB_UART_PIN_RX,
+             HB_UART_PORT_NUM, HB_UART_BAUD_ACTIVE, HB_UART_PIN_TX, HB_UART_PIN_RX,
              HB_UART_PIN_RTS, HB_UART_PIN_CTS);
     return 0;
 }

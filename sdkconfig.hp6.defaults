@@ -1,4 +1,13 @@
-# HealthyPi 6 profile — SPI-slave host link, HP6 payload profile.
+# HealthyPi 6 profile — UART host link (M7 UART4), HP6 payload profile.
 # Layered on sdkconfig.defaults. Target (esp32c6) is set by hp6.sh via set-target.
-CONFIG_HB_TRANSPORT_SPI=y
+#
+# These are DEFAULTS: they seed sdkconfig.hp6 when it does not exist and are
+# ignored once it does. After changing a line here, run `./hp6.sh clean` (or
+# delete sdkconfig.hp6) or the old value stays in effect.
+CONFIG_HB_TRANSPORT_UART=y
 CONFIG_HB_PROFILE_HP6=y
+
+# Host link baud. Bring up at 921600 (bit-identical to the released HealthyPi 5
+# link, so a failure is unambiguously an HP6 problem), then raise both ends to
+# 2000000 once the link is clean.
+CONFIG_HB_UART_BAUD_HP6=921600

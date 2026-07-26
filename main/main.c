@@ -87,10 +87,8 @@ void app_main(void)
         wifi_get_ip(ip, sizeof(ip));
 
         /* HP6 sends PPG as its own frame type; surface the count so a silent PPG
-         * stall is visible, and the slave->master response count so a control
-         * reply that is never clocked out is visible too. HP5 carries PPG inside
-         * biosig and its TX is a plain UART write, so its line is left exactly as
-         * released. */
+         * stall is visible. HP5 carries PPG inside biosig, so its line is left
+         * exactly as released. */
 #if defined(CONFIG_HB_PROFILE_HP6)
         uint32_t n_resp, n_hrv, n_sreq, n_unk;
         hb_link_get_type_counts(&n_resp, &n_hrv, &n_sreq, &n_unk);
@@ -98,14 +96,33 @@ void app_main(void)
         snprintf(ppg_fld, sizeof(ppg_fld), " ppg=%lu resp=%lu hrv=%lu sreq=%lu unk=%lu",
                  (unsigned long)hb_link_ppg_frames(), (unsigned long)n_resp,
                  (unsigned long)n_hrv, (unsigned long)n_sreq, (unsigned long)n_unk);
+#else
+        const char *ppg_fld = "";
+#endif
+
+        /*
+         * Transport-specific field. Gated on the TRANSPORT, not the profile:
+         * hb_transport_spi_tx_stats() only exists in an SPI build, so keying
+         * this off CONFIG_HB_PROFILE_HP6 fails to link an HP6+UART image.
+         *
+         * SPI: tx=sent/dropped — a slave reply is only transmitted when the
+         * master chooses to clock it, so it is worth counting.
+         * UART: flow=queued/cts — see hb_transport_uart_flow(). There is nothing
+         * to count on transmit; a write either completes or returns short.
+         */
+#if defined(CONFIG_HB_TRANSPORT_SPI)
         uint32_t tx_sent, tx_drops;
         hb_transport_spi_tx_stats(&tx_sent, &tx_drops);
         char tx_fld[32];
         snprintf(tx_fld, sizeof(tx_fld), " tx=%lu/%lu",
                  (unsigned long)tx_sent, (unsigned long)tx_drops);
+#elif defined(CONFIG_HB_PROFILE_HP6)
+        uint32_t rx_q; int cts;
+        hb_transport_uart_flow(&rx_q, &cts);
+        char tx_fld[32];
+        snprintf(tx_fld, sizeof(tx_fld), " flow=%luB/cts%d", (unsigned long)rx_q, cts);
 #else
-        const char *ppg_fld = "";
-        const char *tx_fld  = "";
+        const char *tx_fld = "";
 #endif
 
         ESP_LOGI(TAG, "link: rx=%luB biosig=%lu%s vitals=%lu crc_err=%lu drop=%lu%s | "

@@ -333,7 +333,7 @@ static void dispatch_hrv_hp6(const uint8_t *payload, uint16_t len)
 #endif /* CONFIG_HB_PROFILE_HP6 */
 
 /* Route one decoded frame to its consumer. Runs in the dispatch worker task on
- * SPI, or inline in the RX task on UART (see hb_dispatch below). */
+ * HP6, or inline in the RX task on HP5 (see hb_dispatch below). */
 static void hb_dispatch_frame(uint8_t type, uint8_t flags, uint16_t seq,
                               const uint8_t *payload, uint16_t len)
 {
@@ -416,13 +416,26 @@ static void hb_dispatch_frame(uint8_t type, uint8_t flags, uint16_t seq,
     }
 }
 
-#if defined(CONFIG_HB_TRANSPORT_SPI)
+#if defined(CONFIG_HB_PROFILE_HP6)
 /*
- * SPI: decouple heavy consumer dispatch from the SPI RX task. The codec callback
- * runs in that RX task; doing data_store / BLE / OpenView work there delays
- * re-queueing the DMA transactions and drops frames under load. So the callback
- * only copies each frame into a queue, and a lower-priority worker task does the
- * actual dispatch — keeping the RX task free to re-arm transactions promptly.
+ * HP6: decouple heavy consumer dispatch from the RX task.
+ *
+ * The codec callback runs in the transport's RX task. Doing data_store / BLE /
+ * OpenView work there blocks that task, and HP6's frame rate is ~8.4x HP5's with
+ * markedly heavier consumers (OpenView TCP, dashboard SSE, BLE notify). So the
+ * callback only copies each frame into a queue, and a lower-priority worker does
+ * the dispatch.
+ *
+ * Gated on the PROFILE, not the transport — the queue exists for HP6's load, and
+ * both transports need it. What it costs when omitted differs, though:
+ *
+ *   SPI  — inline dispatch delays re-queueing the DMA transactions, and a master
+ *          that clocks into an unarmed slave loses the frame silently.
+ *   UART — inline dispatch lets the RX ring fill, RTS de-asserts and the host
+ *          halts mid-byte. Nothing is lost, which is the point of that link, but
+ *          the stream is needlessly rate-limited by the slowest consumer.
+ *
+ * HP5 keeps inline dispatch: one host, light consumers, released behaviour.
  */
 #define HB_FRAME_QUEUE_DEPTH 16
 
@@ -449,7 +462,10 @@ static void hb_dispatch_task(void *arg)
     }
 }
 
-/* Codec callback (SPI RX task): copy + enqueue; drop if the worker is behind. */
+/* Codec callback (transport RX task): copy + enqueue; drop if the worker is
+ * behind. A drop here is counted by hb_link_frame_drops() and shown as `drop=`
+ * on the status line — on UART it is the only place a frame can be lost, since
+ * the link itself back-pressures rather than dropping. */
 static void hb_dispatch(uint8_t type, uint8_t flags, uint16_t seq,
                         const uint8_t *payload, uint16_t len, void *user)
 {
@@ -470,7 +486,7 @@ static void hb_dispatch(uint8_t type, uint8_t flags, uint16_t seq,
     }
 }
 #else
-/* UART (HP5): dispatch inline in the RX task — unchanged runtime behavior. */
+/* HP5: dispatch inline in the RX task — unchanged runtime behavior. */
 static void hb_dispatch(uint8_t type, uint8_t flags, uint16_t seq,
                         const uint8_t *payload, uint16_t len, void *user)
 {
@@ -481,10 +497,10 @@ static void hb_dispatch(uint8_t type, uint8_t flags, uint16_t seq,
 
 uint32_t hb_link_frame_drops(void)
 {
-#if defined(CONFIG_HB_TRANSPORT_SPI)
+#if defined(CONFIG_HB_PROFILE_HP6)
     return s_frame_drops;
 #else
-    return 0;
+    return 0;   /* HP5 dispatches inline — there is no queue to overflow. */
 #endif
 }
 
@@ -503,9 +519,11 @@ void hb_link_init(void)
 #if defined(CONFIG_HB_ENABLE_OPENVIEW)
     wifi_server_init();   /* server task is started later, once Wi-Fi is up (main loop) */
 #endif
-#if defined(CONFIG_HB_TRANSPORT_SPI)
-    /* Worker drains the frame queue at a priority BELOW the SPI RX task (5), so the
-     * RX task always preempts it and stays responsive to new DMA transactions. */
+#if defined(CONFIG_HB_PROFILE_HP6)
+    /* Worker drains the frame queue at a priority BELOW the transport RX task
+     * (SPI 5, UART 10), so the RX task always preempts it: on SPI that keeps DMA
+     * transactions re-armed, on UART it keeps the RX ring drained so RTS stays
+     * asserted while the host still has room to send. */
     s_frame_q = xQueueCreate(HB_FRAME_QUEUE_DEPTH, sizeof(struct hb_frame_item));
     if (s_frame_q == NULL ||
         xTaskCreate(hb_dispatch_task, "hb_disp", 4096, NULL, 4, NULL) != pdPASS) {

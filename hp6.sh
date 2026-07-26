@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 #
-# HealthyBridge — HealthyPi 6 build/flash/monitor (ESP32-C6, SPI link, HP6 profile).
+# HealthyBridge — HealthyPi 6 build/flash/monitor (ESP32-C6, UART link, HP6 profile).
 #
 # Isolated from the HP5 build: uses its own build dir (build.hp6) and sdkconfig
-# (sdkconfig.hp6), driven by sdkconfig.defaults + sdkconfig.hp6.defaults. The
-# profile defaults select CONFIG_IDF_TARGET=esp32c6, HB_TRANSPORT_SPI, HB_PROFILE_HP6.
+# (sdkconfig.hp6), driven by sdkconfig.defaults + sdkconfig.hp6.defaults, which
+# select esp32c6, HB_TRANSPORT_UART and HB_PROFILE_HP6.
 #
-# NOTE: the HP6 consumer layer (L2) is still in progress — the SPI transport and
-# HP6 contract build, but full-app parity with the HP6 monorepo is not complete.
+# Those are defaults: they seed sdkconfig.hp6 once and are ignored thereafter, so
+# `./hp6.sh clean` is required after changing them — otherwise a build silently
+# keeps the old transport.
+#
+# NOTE: the HP6 consumer layer (L2) is still in progress — the link and the HP6
+# contract build, but full-app parity with the HP6 monorepo is not complete.
 #
 # Usage:
 #   ./hp6.sh                 # build
