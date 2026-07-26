@@ -24,6 +24,12 @@ DEFAULTS="sdkconfig.defaults;sdkconfig.hp5.defaults"
 MODE="${1:-build}"
 PORT="${2:-}"
 
+# This repo builds two chips, so a shell that has already touched the other one
+# carries a conflicting IDF_TARGET and set-target refuses ("target 'esp32c3' ...
+# is not consistent with target 'esp32c6' in the environment"). The script knows
+# its own target; make the environment agree rather than depending on the shell.
+export IDF_TARGET="$TARGET"
+
 if ! command -v idf.py >/dev/null 2>&1; then
   if [ -n "${IDF_PATH:-}" ] && [ -f "$IDF_PATH/export.sh" ]; then
     # shellcheck disable=SC1091
