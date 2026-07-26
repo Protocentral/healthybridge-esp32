@@ -254,10 +254,20 @@ void wifi_start_sta(void)
 {
     /* Guard against connecting to an empty SSID. The host MCU may send WIFI_ENABLE
      * before any credentials are provisioned; dialing "" just fails and reconnects
-     * in a loop. Do NOT open the SoftAP portal here — an active AP (beacons +
-     * captive-portal server) interferes with the high-rate SPI link on the
-     * single-core C6 and corrupts large frames. With no creds, keep the radio
-     * quiet; provisioning is an explicit action (HB_CMD_WIFI_SOFTAP / dashboard). */
+     * in a loop. Do NOT open the SoftAP portal here either — provisioning is an
+     * explicit action (HB_CMD_WIFI_SOFTAP / dashboard), not something a generic
+     * "enable Wi-Fi" should trigger.
+     *
+     * This used to carry a second reason: an active AP corrupted the high-rate
+     * SPI host link on the single-core C6 (~96% crc_err on 520 B frames), so the
+     * radio was kept quiet as a mitigation. That reason is GONE — the host link
+     * moved to UART with hardware RTS/CTS on 2026-07-26, and the same conditions
+     * now measure crc_err=0: a station associated, pulling the captive portal
+     * over HTTP and completing provisioning, plus a 69.5-minute soak with the
+     * radio actively scanning. When the co-processor stalls, RTS de-asserts and
+     * the host halts at a byte boundary in hardware, so back-pressure replaces
+     * silent loss. Keep the guard for the reason above; do not reintroduce it as
+     * a link-integrity measure. */
     if (!cfg_have_wifi_creds()) {
         ESP_LOGW(TAG, "WIFI_ENABLE with no stored SSID — keeping Wi-Fi off (send WIFI_SOFTAP to provision)");
         wifi_stop();
