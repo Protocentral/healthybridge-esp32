@@ -74,6 +74,9 @@ static const char *TAG = "hb_uart";
 static hb_rx_sink_fn s_sink;
 static void         *s_sink_user;
 static volatile uint32_t s_rx_bytes;
+#if HB_UART_TX_BUF > 0
+static volatile uint32_t s_tx_drops;
+#endif
 
 static void uart_set_rx_sink(hb_rx_sink_fn cb, void *user)
 {
@@ -89,6 +92,33 @@ static void uart_get_rx_bytes(uint32_t *out)
 static int uart_send(const uint8_t *buf, size_t len)
 {
     if (!buf || len == 0) { return -1; }
+
+#if HB_UART_TX_BUF > 0
+    /*
+     * The TX ring stops a write from blocking on a de-asserted CTS — but only
+     * while it has room. Once it fills, uart_write_bytes() blocks its caller
+     * again, and now indefinitely: a host that is not asserting CTS never drains
+     * it. At 1 Hz status frames that is ~73 s from boot, and the symptom is the
+     * main loop silently stopping, which during bring-up reads as a crash.
+     *
+     * So refuse instead of blocking. A dropped response is recoverable and
+     * counted; a hung main loop is neither. The host not accepting our bytes is
+     * a fact about the host, and the counter is how it becomes visible.
+     */
+    size_t room = 0;
+    if (uart_get_tx_buffer_free_size(HB_UART_PORT, &room) == ESP_OK && room < len) {
+        static bool warned;
+        if (!warned) {
+            warned = true;
+            ESP_LOGW(TAG, "TX ring full (%u free, need %u) — host is not accepting "
+                          "bytes (CTS de-asserted?); dropping rather than blocking",
+                     (unsigned)room, (unsigned)len);
+        }
+        s_tx_drops++;
+        return -1;
+    }
+#endif
+
     int w = uart_write_bytes(HB_UART_PORT, buf, len);
     return (w == (int)len) ? 0 : -1;
 }
@@ -117,11 +147,13 @@ static void hb_rx_task(void *arg)
  *          the consumers are the bottleneck and RTS is about to throttle the
  *          host — the link is healthy and being deliberately slowed.
  *   cts    the host's permission for US to transmit. 0 = the M7 has stopped us.
+ *   txd    frames refused because the TX ring was full (see uart_send). Non-zero
+ *          means we have been trying to talk to a host that is not listening.
  *
  * RTS is peripheral-driven and not readable as a level, so a de-assert is
  * inferred from rx_q rather than sampled; IO20 on a scope is the direct check.
  */
-void hb_transport_uart_flow(uint32_t *rx_queued, int *cts_level)
+void hb_transport_uart_flow(uint32_t *rx_queued, int *cts_level, uint32_t *tx_drops)
 {
     if (rx_queued) {
         size_t q = 0;
@@ -130,6 +162,13 @@ void hb_transport_uart_flow(uint32_t *rx_queued, int *cts_level)
     }
     if (cts_level) {
         *cts_level = gpio_get_level(HB_UART_PIN_CTS);
+    }
+    if (tx_drops) {
+#if HB_UART_TX_BUF > 0
+        *tx_drops = s_tx_drops;
+#else
+        *tx_drops = 0;   /* HP5 has no TX ring: a write blocks, it never drops. */
+#endif
     }
 }
 

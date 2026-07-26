@@ -40,11 +40,12 @@ const struct hb_transport_if *hb_transport_get(void);
  * the product profile. */
 void hb_transport_spi_tx_stats(uint32_t *sent, uint32_t *drops);
 
-/* UART backend only. Bytes waiting in the RX ring, and the level of the CTS
- * input (the host's permission for us to transmit). Together these separate a
- * dead link from one the flow control is deliberately throttling — both of
- * which show rx= flat. Not defined in an SPI build. */
-void hb_transport_uart_flow(uint32_t *rx_queued, int *cts_level);
+/* UART backend only. Bytes waiting in the RX ring, the level of the CTS input
+ * (the host's permission for us to transmit), and frames refused because the TX
+ * ring was full. Together these separate a dead link from one the flow control
+ * is deliberately throttling — both of which show rx= flat. Not defined in an
+ * SPI build. */
+void hb_transport_uart_flow(uint32_t *rx_queued, int *cts_level, uint32_t *tx_drops);
 
 #ifdef __cplusplus
 }

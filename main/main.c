@@ -117,10 +117,11 @@ void app_main(void)
         snprintf(tx_fld, sizeof(tx_fld), " tx=%lu/%lu",
                  (unsigned long)tx_sent, (unsigned long)tx_drops);
 #elif defined(CONFIG_HB_PROFILE_HP6)
-        uint32_t rx_q; int cts;
-        hb_transport_uart_flow(&rx_q, &cts);
-        char tx_fld[32];
-        snprintf(tx_fld, sizeof(tx_fld), " flow=%luB/cts%d", (unsigned long)rx_q, cts);
+        uint32_t rx_q, tx_drop; int cts;
+        hb_transport_uart_flow(&rx_q, &cts, &tx_drop);
+        char tx_fld[48];
+        snprintf(tx_fld, sizeof(tx_fld), " flow=%luB/cts%d/txd%lu",
+                 (unsigned long)rx_q, cts, (unsigned long)tx_drop);
 #else
         const char *tx_fld = "";
 #endif
