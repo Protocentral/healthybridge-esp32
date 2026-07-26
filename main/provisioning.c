@@ -15,6 +15,7 @@
 #include "lwip/sockets.h"
 
 #include "provisioning.h"
+#include "hb_product.h"
 #include "form_util.h"
 #include "cfg.h"
 
@@ -56,7 +57,7 @@ static esp_err_t root_get(httpd_req_t *req)
         "label{display:block;margin:.6em 0 .15em;font-weight:600}"
         "input[type=text],input[type=password]{width:100%%;padding:.4em;"
         "box-sizing:border-box}h2{color:#b00}button{margin-top:1em;padding:.6em 1.2em}"
-        "</style></head><body><h2>HealthyPi 5 &mdash; Wi-Fi Setup</h2>"
+        "</style></head><body><h2>" HB_PRODUCT_NAME " &mdash; Wi-Fi Setup</h2>"
         "<form method=POST action=/save>"
         "<label>Network (SSID)</label>"
         "<input type=text name=ssid value=\"%s\" maxlength=32>"

@@ -109,9 +109,11 @@ plus `flash.sh`/`flash.bat`, then `pip install esptool` and run:
 > A **full** install (merged image at `0x0`) overwrites
 > the NVS region, so it **erases stored Wi-Fi credentials and settings** — you'll
 > re-provision over the SoftAP captive portal afterwards. Use `--app-only` to
-> update the firmware while keeping settings. There is no over-the-air (OTA)
-> update path: the partition table has a single `factory` app, so updates are over
-> USB/serial only.
+> update the firmware while keeping settings. There is currently no over-the-air
+> (OTA) update path: the partition table has a single `factory` app, so updates
+> are over USB/serial only. *(Planned: the HealthyPi 6 target gains self-OTA —
+> `ota_0`/`ota_1` partitions + a dashboard upload endpoint; the HealthyPi 5
+> target stays USB/serial-only by design.)*
 
 ## Getting started
 

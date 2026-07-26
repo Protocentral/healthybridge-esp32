@@ -1,5 +1,6 @@
-# HealthyBridge Lite ESP32-C3 defaults.
-CONFIG_IDF_TARGET="esp32c3"
+# HealthyBridge shared defaults (target-agnostic).
+# The target is set via `idf.py set-target` (build.sh / hp5.sh / hp6.sh) — do NOT
+# pin CONFIG_IDF_TARGET here, or it conflicts with the C6 (HP6) build.
 
 # --- Bluetooth LE via NimBLE (peripheral) ---
 CONFIG_BT_ENABLED=y

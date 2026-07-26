@@ -1,0 +1,4 @@
+# HealthyPi 6 profile — SPI-slave host link, HP6 payload profile.
+# Layered on sdkconfig.defaults. Target (esp32c6) is set by hp6.sh via set-target.
+CONFIG_HB_TRANSPORT_SPI=y
+CONFIG_HB_PROFILE_HP6=y

@@ -7,6 +7,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /* Init netif/event/wifi (coexists with NimBLE) and, if creds are present,
  * connect in STA mode. Otherwise stays idle until provisioned. */
@@ -31,5 +32,12 @@ void wifi_stop(void);
 bool wifi_is_connected(void);
 bool wifi_is_ap_mode(void);
 void wifi_get_ip(char *buf, size_t n);   /* "0.0.0.0" if not connected */
+
+/* Link details for a host status report (HP6 GET_STATUS). Each yields the
+ * "unknown" value when it does not apply, never a stale one. */
+bool   wifi_is_sta_active(void);         /* STA up and auto-reconnect wanted */
+int8_t wifi_get_rssi(void);              /* dBm; 0 when not connected */
+void   wifi_get_ip4(uint8_t out[4]);     /* a.b.c.d; 0.0.0.0 when no lease */
+void   wifi_get_ssid(char *buf, size_t n); /* "" when not connected */
 
 #endif /* WIFI_H */

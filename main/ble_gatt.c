@@ -21,6 +21,7 @@
  */
 #include <string.h>
 #include "esp_log.h"
+#include "sdkconfig.h"
 
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
@@ -31,6 +32,7 @@
 
 #include "healthybridge.h"
 #include "ble_gatt.h"
+#include "hb_product.h"
 #include "hb_link.h"
 
 static const char *TAG = "ble_gatt";
@@ -69,7 +71,7 @@ static struct hpi_char {
 static uint8_t  s_addr_type;
 static uint16_t s_conn = BLE_HS_CONN_HANDLE_NONE;
 static bool     s_advertising;
-static char     s_dev_name[32] = "HealthyPi 5";
+static char     s_dev_name[32] = HB_PRODUCT_NAME;
 
 static int gap_event_cb(struct ble_gap_event *event, void *arg);
 
@@ -106,8 +108,28 @@ static int chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
     return BLE_ATT_ERR_UNLIKELY;
 }
 
-/* Command TX char write: forward the phone's raw bytes to the RP2040 as a
- * HOST_CMD frame. The RP2040 feeds them to its bounded command parser. */
+/*
+ * Command TX char write: forward the phone's raw bytes to the host.
+ *
+ * HP5: sent as a HOST_CMD frame; the RP2040 feeds them to its bounded command
+ * parser and answers with HOST_RESP, notified back on the CMD_RX char.
+ *
+ * HP6: dropped, deliberately. Three reasons, any one of them sufficient:
+ *   - HOST_CMD (0x52) / HOST_RESP (0x53) are HP5 types. The M7's type table has
+ *     no case for either, so nothing there could consume the frame.
+ *   - The ESP cannot push to the M7 at all. Every M7 data frame goes out via
+ *     spi_write() with no RX buffer, so it samples MISO only inside
+ *     healthybridge_spi_send_cmd(). An unsolicited frame is clocked out unread.
+ *   - Worse than useless: each write would take one of the 4 TX ring slots and
+ *     could delay or evict a real CTRL_RESP, putting the M7 back into a send_cmd
+ *     timeout while it holds spi_lock — the mechanism behind the old 36 % loss of
+ *     forwarded frames, reachable at will by anything that can write the char.
+ * The characteristic itself stays advertised on both profiles (the GATT table is
+ * shared and phone apps enumerate it); on HP6 a write is accepted and logged.
+ *
+ * A phone -> M7 command relay needs the M7 to ask for pending commands, i.e. a
+ * new poll on both sides — a product decision, not a gap to be filled here.
+ */
 static int cmd_tx_write_cb(uint16_t conn_handle, uint16_t attr_handle,
                            struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
@@ -118,8 +140,12 @@ static int cmd_tx_write_cb(uint16_t conn_handle, uint16_t attr_handle,
             len = sizeof(buf);
         }
         if (ble_hs_mbuf_to_flat(ctxt->om, buf, len, NULL) == 0) {
+#if defined(CONFIG_HB_PROFILE_HP6)
+            ESP_LOGW(TAG, "host cmd %u bytes dropped — no HOST_CMD path to the M7", len);
+#else
             hb_link_send(HB_TYPE_HOST_CMD, 0, buf, len);
             ESP_LOGI(TAG, "host cmd %u bytes -> RP2040", len);
+#endif
         }
         return 0;
     }
@@ -226,7 +252,7 @@ void ble_gatt_on_vitals(const struct hb_vitals_payload *v)
     hpi_notify(CH_TEMP, &temp, sizeof(temp));
 }
 
-void ble_gatt_on_biosig(const struct hb_biosig_payload *b)
+void ble_gatt_on_biosig_ch(const struct hb_biosig_payload *b, uint8_t ch_mask)
 {
     uint16_t n = b->sample_count;
     if (n == 0) {
@@ -236,19 +262,52 @@ void ble_gatt_on_biosig(const struct hb_biosig_payload *b)
         n = 8;   /* cache holds 8 i32 */
     }
 
-    int32_t ecg[8], bioz[8];
-    for (uint16_t i = 0; i < n; i++) {
-        ecg[i]  = b->samples[i].ecg;
-        bioz[i] = b->samples[i].bioz;
+    if (ch_mask & DS_CH_BIT(DS_CH_ECG)) {
+        int32_t ecg[8];
+        for (uint16_t i = 0; i < n; i++) { ecg[i] = b->samples[i].ecg; }
+        hpi_notify(CH_ECG, ecg, n * sizeof(int32_t));
     }
-    hpi_notify(CH_ECG,  ecg,  n * sizeof(int32_t));
-    hpi_notify(CH_RESP, bioz, n * sizeof(int32_t));
+    if (ch_mask & DS_CH_BIT(DS_CH_RESP)) {
+        int32_t bioz[8];
+        for (uint16_t i = 0; i < n; i++) { bioz[i] = b->samples[i].bioz; }
+        hpi_notify(CH_RESP, bioz, n * sizeof(int32_t));
+    }
+    if (ch_mask & DS_CH_BIT(DS_CH_PPG)) {
+        /* PPG notified per-sample as int16 (matches legacy ble_ppg_notify). */
+        for (uint16_t i = 0; i < b->sample_count; i++) {
+            int16_t ppg = (int16_t)b->samples[i].ppg_red;
+            hpi_notify(CH_PPG, &ppg, sizeof(ppg));
+        }
+    }
+}
 
-    /* PPG notified per-sample as int16 (matches legacy ble_ppg_notify). */
-    for (uint16_t i = 0; i < b->sample_count; i++) {
-        int16_t ppg = (int16_t)b->samples[i].ppg_red;
+void ble_gatt_on_biosig(const struct hb_biosig_payload *b)
+{
+    ble_gatt_on_biosig_ch(b, DS_CH_ALL);
+}
+
+void ble_gatt_on_ppg(const int32_t *red_ir_pairs, uint16_t n)
+{
+    if (red_ir_pairs == NULL) {
+        return;
+    }
+    /* Same per-sample int16 form as the BIOSIG-carried PPG above, so a phone sees
+     * one PPG stream regardless of which frame type the product sends it on. */
+    for (uint16_t i = 0; i < n; i++) {
+        int16_t ppg = (int16_t)red_ir_pairs[2 * i];   /* red; ir unused */
         hpi_notify(CH_PPG, &ppg, sizeof(ppg));
     }
+}
+
+void ble_gatt_on_resp(const int32_t *samples, uint16_t n)
+{
+    if (samples == NULL || n == 0) {
+        return;
+    }
+    if (n > 8) {
+        n = 8;   /* same 8-sample batching as the BIOSIG path */
+    }
+    hpi_notify(CH_RESP, samples, n * sizeof(int32_t));
 }
 
 void ble_gatt_on_battery(uint8_t soc)

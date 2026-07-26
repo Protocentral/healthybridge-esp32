@@ -252,6 +252,18 @@ static void provisioning_enter(bool sticky)
 
 void wifi_start_sta(void)
 {
+    /* Guard against connecting to an empty SSID. The host MCU may send WIFI_ENABLE
+     * before any credentials are provisioned; dialing "" just fails and reconnects
+     * in a loop. Do NOT open the SoftAP portal here — an active AP (beacons +
+     * captive-portal server) interferes with the high-rate SPI link on the
+     * single-core C6 and corrupts large frames. With no creds, keep the radio
+     * quiet; provisioning is an explicit action (HB_CMD_WIFI_SOFTAP / dashboard). */
+    if (!cfg_have_wifi_creds()) {
+        ESP_LOGW(TAG, "WIFI_ENABLE with no stored SSID — keeping Wi-Fi off (send WIFI_SOFTAP to provision)");
+        wifi_stop();
+        return;
+    }
+
     if (s_ap_mode) {
         provisioning_stop();
         esp_wifi_stop();
@@ -329,4 +341,48 @@ void wifi_get_ip(char *buf, size_t n)
 {
     strncpy(buf, s_ip, n - 1);
     buf[n - 1] = '\0';
+}
+
+/*
+ * Link details for a host status report. Deliberately primitives rather than a
+ * packed struct: the wire shape belongs to whichever profile is asking (HP6's
+ * hb_wifi_status_resp_hp6 today), so no product type leaks into this shared file.
+ *
+ * Each reports the *unknown* value rather than a stale one when it does not
+ * apply — a host that shows invented state is worse than one that shows none.
+ */
+bool wifi_is_sta_active(void) { return s_sta_active; }
+
+int8_t wifi_get_rssi(void)
+{
+    wifi_ap_record_t ap;
+    if (!s_connected || esp_wifi_sta_get_ap_info(&ap) != ESP_OK) {
+        return 0;
+    }
+    return (int8_t)ap.rssi;
+}
+
+void wifi_get_ip4(uint8_t out[4])
+{
+    esp_netif_ip_info_t info;
+    if (!s_connected || s_sta_netif == NULL ||
+        esp_netif_get_ip_info(s_sta_netif, &info) != ESP_OK) {
+        memset(out, 0, 4);
+        return;
+    }
+    /* esp_ip4_addr_t stores the octets in a.b.c.d memory order. */
+    memcpy(out, &info.ip.addr, 4);
+}
+
+void wifi_get_ssid(char *buf, size_t n)
+{
+    if (n == 0) {
+        return;
+    }
+    buf[0] = '\0';
+    wifi_ap_record_t ap;
+    if (s_connected && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+        strncpy(buf, (const char *)ap.ssid, n - 1);
+        buf[n - 1] = '\0';
+    }
 }

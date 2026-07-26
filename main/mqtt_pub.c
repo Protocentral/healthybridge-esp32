@@ -10,6 +10,7 @@
 #include "mqtt_client.h"
 
 #include "mqtt_pub.h"
+#include "hb_product.h"
 #include "cfg.h"
 #include "wifi.h"
 
@@ -19,7 +20,7 @@ static esp_mqtt_client_handle_t s_client;
 static bool  s_connected;        /* broker session up */
 static bool  s_started;          /* client running for the current uri */
 static char  s_uri[128];         /* uri the running client was started with */
-static char  s_base[40];         /* topic base: "healthypi5/<mac6>" */
+static char  s_base[40];         /* topic base: "<product>/<mac6>", e.g. healthypi5/... */
 
 static void ensure_base(void)
 {
@@ -28,7 +29,9 @@ static void ensure_base(void)
     }
     uint8_t mac[6] = {0};
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    snprintf(s_base, sizeof(s_base), "healthypi5/%02x%02x%02x%02x%02x%02x",
+    /* Product-scoped so an HP6 unit does not publish under the HP5 root. The HP5
+     * root is frozen: existing subscribers match on "healthypi5/". */
+    snprintf(s_base, sizeof(s_base), HB_PRODUCT_SLUG "/%02x%02x%02x%02x%02x%02x",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 

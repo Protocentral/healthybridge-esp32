@@ -46,7 +46,7 @@ static inline void wave_push(struct ds_wave *w, int32_t v)
     w->total++;
 }
 
-void data_store_push_biosig(const struct hb_biosig_payload *b)
+void data_store_push_biosig_ch(const struct hb_biosig_payload *b, uint8_t ch_mask)
 {
     if (b->sample_count == 0) {
         return;
@@ -56,9 +56,38 @@ void data_store_push_biosig(const struct hb_biosig_payload *b)
         s_wave_rate = b->sample_rate_hz;
     }
     for (uint16_t i = 0; i < b->sample_count; i++) {
-        wave_push(&s_wave[DS_CH_ECG],  b->samples[i].ecg);
-        wave_push(&s_wave[DS_CH_RESP], b->samples[i].bioz);
-        wave_push(&s_wave[DS_CH_PPG],  b->samples[i].ppg_red);
+        if (ch_mask & DS_CH_BIT(DS_CH_ECG))  { wave_push(&s_wave[DS_CH_ECG],  b->samples[i].ecg); }
+        if (ch_mask & DS_CH_BIT(DS_CH_RESP)) { wave_push(&s_wave[DS_CH_RESP], b->samples[i].bioz); }
+        if (ch_mask & DS_CH_BIT(DS_CH_PPG))  { wave_push(&s_wave[DS_CH_PPG],  b->samples[i].ppg_red); }
+    }
+    xSemaphoreGive(s_lock);
+}
+
+void data_store_push_biosig(const struct hb_biosig_payload *b)
+{
+    data_store_push_biosig_ch(b, DS_CH_ALL);
+}
+
+void data_store_push_ppg(const int32_t *red_ir_pairs, uint16_t n)
+{
+    if (red_ir_pairs == NULL || n == 0) {
+        return;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (uint16_t i = 0; i < n; i++) {
+        wave_push(&s_wave[DS_CH_PPG], red_ir_pairs[2 * i]);   /* red; ir unused */
+    }
+    xSemaphoreGive(s_lock);
+}
+
+void data_store_push_resp(const int32_t *samples, uint16_t n)
+{
+    if (samples == NULL || n == 0) {
+        return;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (uint16_t i = 0; i < n; i++) {
+        wave_push(&s_wave[DS_CH_RESP], samples[i]);
     }
     xSemaphoreGive(s_lock);
 }

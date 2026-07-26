@@ -17,4 +17,19 @@ int hb_link_send(uint8_t type, uint8_t flags, const uint8_t *payload, uint16_t l
 /* RX counters (any pointer may be NULL) — non-zero bytes proves the link. */
 void hb_link_get_stats(uint32_t *bytes, uint32_t *biosig, uint32_t *vitals, uint32_t *crc_err);
 
+/* Frames dropped because the dispatch worker queue was full (SPI only; 0 on UART).
+ * A non-zero, climbing value means consumers can't keep up with the RX rate. */
+uint32_t hb_link_frame_drops(void);
+
+/* Dedicated PPG frames received (HealthyPi 6 type 0x10). Always 0 on HealthyPi 5,
+ * which carries PPG inside HB_TYPE_BIOSIG. */
+uint32_t hb_link_ppg_frames(void);
+
+/* Counts for the frame types that carry no consumer of their own. `resp` (0x30),
+ * `hrv` (0x42) and `status_req` (0x60) are HealthyPi 6 types and read 0 on
+ * HealthyPi 5; `unknown` counts frames of a type this build has no case for, on
+ * either profile. Any NULL argument is skipped. */
+void hb_link_get_type_counts(uint32_t *resp, uint32_t *hrv,
+                             uint32_t *status_req, uint32_t *unknown);
+
 #endif /* HB_LINK_H */

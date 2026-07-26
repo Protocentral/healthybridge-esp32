@@ -1,0 +1,62 @@
+menu "HealthyBridge"
+
+choice HB_TRANSPORT
+    prompt "Host link transport"
+    default HB_TRANSPORT_UART
+    help
+      Physical link to the host MCU. Exactly one backend is compiled.
+
+config HB_TRANSPORT_UART
+    bool "UART (HealthyPi 5 / RP2040, ESP32-C3)"
+    help
+      Framed UART @ 921600 8N1 with HW RTS/CTS. The released HealthyPi 5 profile.
+
+config HB_TRANSPORT_SPI
+    bool "SPI slave (HealthyPi 6 / STM32 M7, ESP32-C6)"
+    help
+      FSPI (SPI2) slave with DMA. HealthyPi 6 profile. Not yet verified on C6
+      hardware.
+
+endchoice
+
+choice HB_PROFILE
+    prompt "Host product profile"
+    default HB_PROFILE_HP5
+    help
+      Selects the payload schema for the type IDs that differ per product
+      (0x20 biosignal, 0x40 vitals). The hb_link dispatch decodes the matching
+      HP5 or HP6 struct and adapts it into the shared consumer path.
+
+config HB_PROFILE_HP5
+    bool "HealthyPi 5 (16-byte combined biosig sample)"
+
+config HB_PROFILE_HP6
+    bool "HealthyPi 6 (32-byte multi-channel sample)"
+
+endchoice
+
+comment "HP6-only consumers (BLE / Wi-Fi / dashboard / MQTT stay shared)"
+
+config HB_ENABLE_OPENVIEW
+    bool "OpenView TCP streaming"
+    default y if HB_PROFILE_HP6
+    default n
+    help
+      HealthyPi 6 OpenView desktop streaming: 50-byte binary waveform packets
+      broadcast over raw TCP on port 5000. Gates openview_protocol.c and
+      wifi_server.c. Not used by HealthyPi 5.
+
+      There is no WebSocket consumer — the local dashboard serves waveforms
+      over SSE from its own HTTP server, and the legacy HP6 websocket_stream
+      module was dropped rather than ported.
+
+config HB_ENABLE_SMP_GATEWAY
+    bool "MCUmgr SMP gateway"
+    default y if HB_PROFILE_HP6
+    default n
+    help
+      Bridge MCUmgr SMP (firmware update / stat / fs) between a BLE/Wi-Fi client
+      and the HealthyPi 6 host MCU. Gates the smp_gateway / smp_client consumers.
+      Not used by HealthyPi 5.
+
+endmenu

@@ -14,6 +14,7 @@
 #include "mdns.h"
 
 #include "dashboard.h"
+#include "hb_product.h"
 #include "form_util.h"
 #include "cfg.h"
 #include "data_store.h"
@@ -44,7 +45,7 @@ static void mdns_up(void)
         return;
     }
     mdns_hostname_set(DASH_MDNS_HOST);
-    mdns_instance_name_set("HealthyPi 5");
+    mdns_instance_name_set(HB_PRODUCT_NAME);
     mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
     s_mdns = true;
     ESP_LOGI(TAG, "mdns: http://" DASH_MDNS_HOST ".local/");
@@ -74,7 +75,7 @@ static esp_err_t page_get(httpd_req_t *req)
     SC(
     "<!DOCTYPE html><html lang=en><head><meta charset=utf-8>"
     "<meta name=viewport content='width=device-width,initial-scale=1,viewport-fit=cover'>"
-    "<title>HealthyPi 5</title><style>"
+    "<title>" HB_PRODUCT_NAME "</title><style>"
     ":root{--bg:#141218;--surf:#211f24;--hi:#2b2930;--hier:#36343b;--on:#e6e1e9;"
     "--var:#cac4d0;--out:#48464c;--pri:#ffb3b0;--onpri:#561d1c;--rad:16px}"
     "*{box-sizing:border-box}html,body{margin:0;height:100%}"
@@ -113,7 +114,7 @@ static esp_err_t page_get(httpd_req_t *req)
     ".tb{background:transparent;color:var(--pri);border:none;border-radius:999px;padding:10px 20px;cursor:pointer}"
     ".tb:hover{background:rgba(255,179,176,.08)}hr.d{border:none;border-top:1px solid var(--out);margin:16px 0}"
     "</style></head><body><div class=app>"
-    "<header class=bar><span class=title>HealthyPi&nbsp;5</span>"
+    "<header class=bar><span class=title>" HB_PRODUCT_NAME_HTML "</span>"
     "<span class=chips id=chips></span>"
     "<button class=ic id=cfg title=Settings>&#9881;</button></header>"
     "<div class=banner id=banner hidden></div>"

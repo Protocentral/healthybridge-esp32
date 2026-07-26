@@ -8,3 +8,13 @@ managed_components/
 # Editor / OS
 .vscode/
 .DS_Store
+
+# Per-profile build outputs (hp5.sh / hp6.sh)
+build.hp5/
+build.hp6/
+sdkconfig.hp5
+sdkconfig.hp6
+
+# Internal working notes: planning, handoffs, bring-up logs. Not part of the
+# public repository — docs/ carries the architecture and protocol references.
+internal/
