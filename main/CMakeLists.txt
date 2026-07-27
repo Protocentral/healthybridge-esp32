@@ -27,5 +27,5 @@ idf_component_register(
     # esp_wifi/esp_netif/esp_event = Wi-Fi STA/AP (coexists with BLE),
     # esp_http_server = captive-portal provisioning form (lwip provides DNS sockets),
     # mqtt = optional vitals publish, mdns = healthypi.local for the dashboard.
-    REQUIRES bt nvs_flash esp_driver_uart esp_driver_spi esp_driver_gpio esp_wifi esp_netif esp_event esp_http_server mqtt mdns
+    REQUIRES bt nvs_flash esp_driver_uart esp_driver_spi esp_driver_gpio esp_wifi esp_netif esp_event esp_http_server mqtt mdns esp_app_format
 )

@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: MIT
  * HealthyBridge ESP32-C3 — form parsing / HTML escaping helpers.
  */
+#include <stdio.h>
 #include <string.h>
 #include "form_util.h"
 
@@ -84,4 +85,44 @@ bool form_field(const char *body, const char *key, char *out, size_t outlen)
     }
     out[0] = '\0';
     return false;
+}
+
+void json_escape(char *dst, size_t dstlen, const char *src)
+{
+    if (dstlen == 0) {
+        return;
+    }
+    size_t o = 0;
+    for (const unsigned char *p = (const unsigned char *)src; *p; p++) {
+        /* Longest expansion is \uXXXX = 6 bytes; bail before it would not fit
+         * so the result is never truncated part-way through an escape. */
+        const char *esc = NULL;
+        char ubuf[7];
+        size_t need;
+
+        switch (*p) {
+        case '"':  esc = "\\\""; break;
+        case '\\': esc = "\\\\"; break;
+        case '\n': esc = "\\n";  break;
+        case '\r': esc = "\\r";  break;
+        case '\t': esc = "\\t";  break;
+        default:
+            if (*p < 0x20) {
+                snprintf(ubuf, sizeof(ubuf), "\\u%04X", *p);
+                esc = ubuf;
+            }
+            break;
+        }
+        need = esc ? strlen(esc) : 1;
+        if (o + need >= dstlen) {
+            break;
+        }
+        if (esc) {
+            memcpy(dst + o, esc, need);
+        } else {
+            dst[o] = (char)*p;
+        }
+        o += need;
+    }
+    dst[o] = '\0';
 }

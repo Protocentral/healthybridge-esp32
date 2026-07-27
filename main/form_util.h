@@ -20,4 +20,10 @@ bool form_field(const char *body, const char *key, char *out, size_t outlen);
  * (never split mid-entity) rather than overflowing dst. */
 void html_escape(char *dst, size_t dstlen, const char *src);
 
+/* Escape src for use inside a double-quoted JSON string, writing a
+ * NUL-terminated result to dst. Escapes \ and " and control characters below
+ * 0x20; bytes >= 0x80 pass through, so a UTF-8 SSID survives intact. Output is
+ * truncated (never split mid-escape) rather than overflowing dst. */
+void json_escape(char *dst, size_t dstlen, const char *src);
+
 #endif /* FORM_UTIL_H */

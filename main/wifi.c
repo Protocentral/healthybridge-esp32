@@ -40,6 +40,8 @@
 static const char *TAG = "wifi";
 
 #define AP_SSID_PREFIX "HealthyPi-"
+
+static char s_ap_name[33];   /* SoftAP SSID, for the portal header */
 #define AP_MAX_CONN    4
 #define AP_CHANNEL     1
 
@@ -239,11 +241,19 @@ static void provisioning_enter(bool sticky)
     ap.ap.max_connection = AP_MAX_CONN;
     ap.ap.authmode = WIFI_AUTH_OPEN;   /* open network for easy onboarding */
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    /* APSTA, not AP: the captive portal offers a list of nearby networks, and
+     * esp_wifi_scan_start() needs a station interface. The STA half stays idle
+     * -- no connect is issued here -- so this costs nothing but the ability to
+     * scan. The scan itself is taken once at portal start, before any client
+     * has joined, precisely because scanning hops channels and would otherwise
+     * stall the browser that asked for it. */
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap));
     ESP_ERROR_CHECK(esp_wifi_start());
 
     s_ap_mode = true;
+    strncpy(s_ap_name, (const char *)ap.ap.ssid, sizeof(s_ap_name) - 1);
+    s_ap_name[sizeof(s_ap_name) - 1] = '\0';
     ESP_LOGI(TAG, "SoftAP \"%s\" up (open, %s); join it to provision",
              ap.ap.ssid, sticky ? "stays up" : "times out if unused");
 
@@ -346,6 +356,15 @@ void wifi_tick(void)
 
 bool wifi_is_connected(void) { return s_connected; }
 bool wifi_is_ap_mode(void)   { return s_ap_mode; }
+
+void wifi_get_ap_name(char *buf, size_t n)
+{
+    if (n == 0) {
+        return;
+    }
+    strncpy(buf, s_ap_name, n - 1);
+    buf[n - 1] = '\0';
+}
 
 void wifi_get_ip(char *buf, size_t n)
 {

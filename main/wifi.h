@@ -39,5 +39,6 @@ bool   wifi_is_sta_active(void);         /* STA up and auto-reconnect wanted */
 int8_t wifi_get_rssi(void);              /* dBm; 0 when not connected */
 void   wifi_get_ip4(uint8_t out[4]);     /* a.b.c.d; 0.0.0.0 when no lease */
 void   wifi_get_ssid(char *buf, size_t n); /* "" when not connected */
+void   wifi_get_ap_name(char *buf, size_t n); /* SoftAP SSID; "" before the AP is up */
 
 #endif /* WIFI_H */
