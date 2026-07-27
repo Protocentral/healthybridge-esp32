@@ -1,0 +1,167 @@
+<!DOCTYPE html><html><head><meta charset=utf-8>
+<meta name=viewport content='width=device-width,initial-scale=1'>
+<title>HealthyPi 6 — Wi-Fi Setup</title>
+<style>
+/* Tokens mirror app_m7/src/ui/theme/hpi_m3_theme.h so the portal and the
+   device screen are recognisably the same product. Single-theme on purpose.
+   Everything inline: a client on this AP has no route to the internet, so any
+   external font, script or image is a spinner that never resolves. */
+:root{--g:#0E1114;--s:#14171A;--r:#1C2126;--o:#232A31;--p:#6FB3CC;--pc:#1E3A45;
+--opc:#A8D4E4;--op:#06232E;--t:#ECEFF1;--m:#9AA6AD;--d:#6B767E;--ok:#4ADE80;
+--w:#FB923C;--e:#F87171;
+--ui:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+--mo:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--g);color:var(--t);font-family:var(--ui);font-size:15px;
+line-height:1.5;-webkit-font-smoothing:antialiased;padding-bottom:104px}
+.w{max-width:460px;margin:0 auto;padding:0 16px}
+header{padding:26px 20px 20px;border-bottom:1px solid var(--o)}
+.mk{display:flex;align-items:center;gap:10px}
+svg{width:26px;height:14px;overflow:visible}
+svg path{fill:none;stroke:var(--p);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+h1{margin:0;font-size:19px;font-weight:600;letter-spacing:-.01em}
+.id{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px 14px;font-family:var(--mo);
+font-size:11.5px;color:var(--d);font-variant-numeric:tabular-nums}
+.id b{color:var(--m);font-weight:400}
+.le{margin:14px 0 0;color:var(--m);font-size:13.5px;max-width:38ch}
+section{padding:22px 20px;border-bottom:1px solid var(--o)}
+.sh{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:4px}
+h2{margin:0;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:var(--m)}
+.hi{margin:0 0 16px;font-size:12.5px;color:var(--d);max-width:40ch}
+.sc{font-size:11.5px;font-family:var(--mo)}
+.sc .rs{color:var(--p);text-decoration:none;padding:2px 4px;border-radius:4px}
+ul{list-style:none;margin:0 0 14px;padding:0;border:1px solid var(--o);
+border-radius:10px;overflow:hidden;background:var(--s)}
+li+li{border-top:1px solid var(--o)}
+.net{width:100%;display:flex;align-items:center;gap:12px;padding:12px 14px;background:none;
+border:0;cursor:pointer;color:var(--t);font:inherit;text-align:left}
+.net[aria-pressed=true]{background:var(--pc)}
+.net[aria-pressed=true] .ss{color:var(--opc);font-weight:600}
+.ss{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lk{flex:0 0 auto;color:var(--d);font-size:11px;font-family:var(--mo)}
+.sg{display:flex;align-items:flex-end;gap:2px;height:13px;flex:0 0 auto}
+.sg i{width:3px;background:var(--o);border-radius:1px;display:block}
+.sg i:nth-child(1){height:4px}.sg i:nth-child(2){height:7px}
+.sg i:nth-child(3){height:10px}.sg i:nth-child(4){height:13px}
+.sg[data-b='2'] i:nth-child(-n+2),.sg[data-b='3'] i:nth-child(-n+3),
+.sg[data-b='4'] i:nth-child(-n+4){background:var(--p)}
+.sg[data-b='1'] i:nth-child(-n+1){background:var(--w)}
+.empty{padding:14px;color:var(--d);font-size:12.5px;text-align:center}
+.f{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+label{font-size:12.5px;color:var(--m)}.rq{color:var(--d)}
+input[type=text],input[type=password]{width:100%;padding:11px 12px;background:var(--s);
+border:1px solid var(--o);border-radius:8px;color:var(--t);font-family:var(--mo);font-size:14px}
+input::placeholder{color:var(--d);font-family:var(--ui)}
+input:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--p);outline-offset:2px}
+input[aria-invalid=true]{border-color:var(--e)}
+.pw{position:relative;display:flex}.pw input{padding-right:64px}
+.rv{position:absolute;right:4px;top:4px;bottom:4px;padding:0 10px;background:none;border:0;
+color:var(--p);font-size:11.5px;font-family:var(--mo);cursor:pointer;border-radius:6px}
+.row{display:flex;align-items:flex-start;gap:14px;padding:2px 0}.row+.row{margin-top:18px}
+.row .tx{flex:1 1 auto}.nm{font-size:14px}.sb{font-size:12.5px;color:var(--d);margin-top:2px}
+.sw{flex:0 0 auto;position:relative;width:42px;height:24px;background:var(--o);border:0;
+border-radius:12px;cursor:pointer;transition:background .16s;margin-top:2px}
+.sw::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;
+background:var(--d);transition:transform .16s,background .16s}
+.sw[aria-checked=true]{background:var(--pc)}
+.sw[aria-checked=true]::after{transform:translateX(18px);background:var(--p)}
+.sf{margin-top:14px;padding-left:14px;border-left:1px solid var(--o)}
+.ac{position:fixed;left:0;right:0;bottom:0;
+background:linear-gradient(to top,var(--g) 62%,rgba(14,17,20,0));padding:22px 16px 18px}
+.cta{width:100%;padding:14px;background:var(--p);color:var(--op);border:0;border-radius:10px;
+font:inherit;font-size:15px;font-weight:600;cursor:pointer}
+.ft{margin:10px 0 0;text-align:center;font-size:11.5px;color:var(--d)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head><body>
+
+<div class=w><header>
+  <div class=mk>
+    <svg viewBox='0 0 52 28' aria-hidden=true><path d='M1 14h11l4-9 6 20 5-13 4 6h20'/></svg>
+    <h1>HealthyPi&nbsp;6</h1>
+  </div>
+  <div class=id><span><b>fw</b> {{FWVER}}</span><span><b>ap</b> {{APNAME}}</span></div>
+  <p class=le>Connect this device to your network. It streams vitals over Wi-Fi
+  and can publish to your own MQTT broker.</p>
+</header></div>
+
+<form class=w method=POST action=/save novalidate>
+
+  <section>
+    <div class=sh><h2>Wi-Fi network</h2>
+      <div class=sc><a class=rs href='/?refresh=1'>Rescan</a></div></div>
+    <p class=hi>2.4&nbsp;GHz only — 5&nbsp;GHz networks will not appear here.</p>
+    <ul>{{NETLIST}}</ul>
+    <div class=f>
+      <label for=ssid>Network name <span class=rq>· 32 characters max</span></label>
+      <input id=ssid name=ssid type=text maxlength=32 autocomplete=off autocapitalize=none
+             spellcheck=false placeholder='Pick one above, or type it' value="{{SSID}}">
+    </div>
+    <div class=f>
+      <label for=pw>Password <span class=rq>· 64 characters max</span></label>
+      <div class=pw>
+        <input id=pw name=pass type=password maxlength=64 autocomplete=off spellcheck=false
+               placeholder='Leave empty if open'>
+        <button type=button class=rv id=rv aria-label='Show password'>SHOW</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Telemetry</h2>
+    <p class=hi>Independent of each other; both can be changed later from the dashboard.</p>
+    <div class=row>
+      <div class=tx><div class=nm>Publish to MQTT</div>
+        <div class=sb>Sends vitals to a broker you run.</div></div>
+      <button type=button class=sw id=mq role=switch aria-label='Publish to MQTT'
+              aria-checked={{MQTTCHK}}></button>
+    </div>
+    <input type=hidden name=mqtt_en id=mqh value="">
+    <div class=sf id=mf>
+      <div class=f style='margin-top:0'>
+        <label for=uri>Broker address</label>
+        <input id=uri name=mqtt_uri type=text maxlength=127 autocomplete=off spellcheck=false
+               placeholder='mqtt://broker.local:1883' value="{{MQTTURI}}">
+      </div>
+    </div>
+    <div class=row>
+      <div class=tx><div class=nm>Local web dashboard</div>
+        <div class=sb>Live waveforms and vitals at healthypi.local on your network.</div></div>
+      <button type=button class=sw id=db role=switch aria-label='Local web dashboard'
+              aria-checked={{DASHCHK}}></button>
+    </div>
+    <input type=hidden name=dash_en id=dbh value="">
+  </section>
+
+  <div class=ac><div class=w>
+    <button type=submit class=cta>Save &amp; Connect</button>
+    <p class=ft>The device restarts and joins your network. This page will close.</p>
+  </div></div>
+</form>
+
+<script>
+/* Kept minimal and free of fetch/XHR: this page is displayed in the OS captive
+   sign-in sheet, the most restricted browser on the platform. The network list
+   is rendered server-side so it shows even if none of this runs. */
+var S=document.getElementById('ssid');
+function pick(e,n){
+  S.value=n;S.setAttribute('aria-invalid','false');
+  var l=document.querySelectorAll('.net');
+  for(var i=0;i<l.length;i++)l[i].setAttribute('aria-pressed',String(l[i]===e));
+  document.getElementById('pw').focus();
+}
+function sw(b,h,f){b.onclick=function(){
+  var v=b.getAttribute('aria-checked')!=='true';
+  b.setAttribute('aria-checked',String(v));h.value=v?'1':'';if(f)f(v);};}
+var mq=document.getElementById('mq'),db=document.getElementById('db'),
+    mf=document.getElementById('mf'),mqh=document.getElementById('mqh'),
+    dbh=document.getElementById('dbh');
+sw(mq,mqh,function(v){mf.style.display=v?'':'none';});
+sw(db,dbh);
+mqh.value=mq.getAttribute('aria-checked')==='true'?'1':'';
+dbh.value=db.getAttribute('aria-checked')==='true'?'1':'';
+mf.style.display=mq.getAttribute('aria-checked')==='true'?'':'none';
+document.getElementById('rv').onclick=function(){
+  var p=document.getElementById('pw'),sh=p.type==='text';
+  p.type=sh?'password':'text';this.textContent=sh?'SHOW':'HIDE';};
+</script>
+</body></html>

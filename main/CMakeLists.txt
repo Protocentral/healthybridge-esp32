@@ -1,5 +1,6 @@
 set(hb_srcs
     "main.c"
+    "www_tpl.c"
     "hb_link.c"
     "hb_codec.c"
     "hb_transport_uart.c"
@@ -23,6 +24,9 @@ endif()
 idf_component_register(
     SRCS ${hb_srcs}
     INCLUDE_DIRS "."
+    # Pages are authored as real .html files and linked in NUL-terminated.
+    # Edit them as markup; www_tpl.c fills the {{TOKEN}} holes at serve time.
+    EMBED_TXTFILES "www/portal.html" "www/saved.html"
     # bt = NimBLE host, nvs_flash = BLE store + config, esp_driver_uart = UART,
     # esp_wifi/esp_netif/esp_event = Wi-Fi STA/AP (coexists with BLE),
     # esp_http_server = captive-portal provisioning form (lwip provides DNS sockets),
