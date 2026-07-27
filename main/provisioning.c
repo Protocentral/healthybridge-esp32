@@ -108,6 +108,13 @@ static void prov_scan(void)
     ESP_LOGI(TAG, "scan: %u network(s) offered to the portal", s_scan_n);
 }
 
+static void scan_task(void *arg)
+{
+    (void)arg;
+    prov_scan();
+    vTaskDelete(NULL);
+}
+
 /* RSSI -> 1..4 bars. Thresholds are the usual desktop-client breakpoints. */
 static int bars(int8_t rssi)
 {
@@ -516,9 +523,15 @@ void provisioning_start(void)
     httpd_register_uri_handler(s_httpd, &scan);
     httpd_register_err_handler(s_httpd, HTTPD_404_NOT_FOUND, captive_redirect);
 
-    /* Scan now, while nobody is associated: a scan hops channels and would
-     * otherwise stall the very browser that requested it. */
-    prov_scan();
+    /* Scan in a detached task, NOT inline.
+     *
+     * A blocking scan here runs inside the WIFI_SOFTAP command's call path, so
+     * the host's acknowledgement is withheld for the ~2 s the scan takes and
+     * the command reports a timeout even though the portal came up correctly.
+     * Off the critical path, the scan still finishes long before anyone has
+     * joined the AP and opened the page; /scan serves whatever is cached, and
+     * an empty list still leaves manual entry and Rescan. */
+    xTaskCreate(scan_task, "prov_scan", 4096, NULL, 4, NULL);
 
     s_dns_run = true;
     xTaskCreate(dns_task, "captive_dns", 3072, NULL, 5, &s_dns_task);
