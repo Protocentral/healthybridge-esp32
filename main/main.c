@@ -102,21 +102,10 @@ void app_main(void)
 
         /*
          * Transport-specific field. Gated on the TRANSPORT, not the profile:
-         * hb_transport_spi_tx_stats() only exists in an SPI build, so keying
-         * this off CONFIG_HB_PROFILE_HP6 fails to link an HP6+UART image.
-         *
-         * SPI: tx=sent/dropped — a slave reply is only transmitted when the
-         * master chooses to clock it, so it is worth counting.
-         * UART: flow=queued/cts — see hb_transport_uart_flow(). There is nothing
-         * to count on transmit; a write either completes or returns short.
+         * flow=queued/cts/txd — see hb_transport_uart_flow(). There is nothing to
+         * count on transmit; a write either completes or returns short.
          */
-#if defined(CONFIG_HB_TRANSPORT_SPI)
-        uint32_t tx_sent, tx_drops;
-        hb_transport_spi_tx_stats(&tx_sent, &tx_drops);
-        char tx_fld[32];
-        snprintf(tx_fld, sizeof(tx_fld), " tx=%lu/%lu",
-                 (unsigned long)tx_sent, (unsigned long)tx_drops);
-#elif defined(CONFIG_HB_PROFILE_HP6)
+#if defined(CONFIG_HB_PROFILE_HP6)
         uint32_t rx_q, tx_drop; int cts;
         hb_transport_uart_flow(&rx_q, &cts, &tx_drop);
         char tx_fld[48];

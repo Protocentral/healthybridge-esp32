@@ -43,19 +43,14 @@ static const char *TAG = "control";
  *          stack buffer below, sized well clear of anything a status reply needs
  *          and still far under HB_CODEC_MAX_PAYLOAD.
  */
-#if defined(CONFIG_HB_TRANSPORT_SPI)
-#define CTRL_ACK_MAX_DATA 50
-#else
 #define CTRL_ACK_MAX_DATA 200
-#endif
 
 /* The budget above is only meaningful if it is enforced at build time. The
  * runtime check in control_ack_data() catches a dynamic length; this catches the
  * one payload we know statically, so widening the struct fails the build instead
  * of degrading to a bare ack on hardware. */
 _Static_assert(sizeof(struct hb_wifi_status_resp_hp6) <= CTRL_ACK_MAX_DATA,
-               "hp6 wifi status no longer fits a CTRL_RESP — raise CTRL_ACK_MAX_DATA "
-               "(and HB_SPI_TX_FRAME_MAX if the SPI transport is selected)");
+               "hp6 wifi status no longer fits a CTRL_RESP — raise CTRL_ACK_MAX_DATA");
 
 static void control_ack_data(uint8_t cmd, uint8_t status,
                              const void *data, uint16_t data_len)
@@ -111,7 +106,6 @@ static void control_ack(uint8_t cmd, uint8_t status)
  */
 void control_send_status(void)
 {
-#if !defined(CONFIG_HB_TRANSPORT_SPI)
     struct hb_status_payload s = {
         .ble_advertising = ble_gatt_is_advertising() ? 1 : 0,
         .ble_connected   = ble_gatt_is_connected()   ? 1 : 0,
@@ -119,7 +113,6 @@ void control_send_status(void)
         .wifi_ap_mode    = wifi_is_ap_mode()   ? 1 : 0,
     };
     hb_link_send(HB_TYPE_STATUS, 0, (const uint8_t *)&s, sizeof(s));
-#endif
 }
 
 #if defined(CONFIG_HB_PROFILE_HP6)

@@ -4,7 +4,6 @@ set(hb_srcs
     "hb_link.c"
     "hb_codec.c"
     "hb_transport_uart.c"
-    "hb_transport_spi.c"
     "data_store.c"
     "ble_gatt.c"
     "control.c"
@@ -27,9 +26,9 @@ idf_component_register(
     # Pages are authored as real .html files and linked in NUL-terminated.
     # Edit them as markup; www_tpl.c fills the {{TOKEN}} holes at serve time.
     EMBED_TXTFILES "www/portal.html" "www/saved.html"
-    # bt = NimBLE host, nvs_flash = BLE store + config, esp_driver_uart = UART,
+    # bt = NimBLE host, nvs_flash = BLE store + config, esp_driver_uart = the host link,
     # esp_wifi/esp_netif/esp_event = Wi-Fi STA/AP (coexists with BLE),
     # esp_http_server = captive-portal provisioning form (lwip provides DNS sockets),
     # mqtt = optional vitals publish, mdns = healthypi.local for the dashboard.
-    REQUIRES bt nvs_flash esp_driver_uart esp_driver_spi esp_driver_gpio esp_wifi esp_netif esp_event esp_http_server mqtt mdns esp_app_format
+    REQUIRES bt nvs_flash esp_driver_uart esp_driver_gpio esp_wifi esp_netif esp_event esp_http_server mqtt mdns esp_app_format
 )

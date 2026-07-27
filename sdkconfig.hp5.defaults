@@ -1,4 +1,3 @@
 # HealthyPi 5 profile — framed-UART host link, HP5 payload profile.
 # Layered on sdkconfig.defaults. Target (esp32c3) is set by hp5.sh via set-target.
-CONFIG_HB_TRANSPORT_UART=y
 CONFIG_HB_PROFILE_HP5=y

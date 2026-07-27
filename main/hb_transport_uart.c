@@ -18,8 +18,6 @@
  */
 #include "sdkconfig.h"
 
-#if defined(CONFIG_HB_TRANSPORT_UART)
-
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -212,4 +210,3 @@ const struct hb_transport_if *hb_transport_get(void)
     return &s_uart_if;
 }
 
-#endif /* CONFIG_HB_TRANSPORT_UART */

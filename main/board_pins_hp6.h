@@ -39,11 +39,5 @@
 #define HB_UART_PIN_RTS     20   /* -> M7 PB0  (UART4_CTS) */
 #define HB_UART_PIN_CTS     21   /* <- M7 PA15 (UART4_RTS) */
 
-#define HB_SPI_PIN_SCLK     6
-#define HB_SPI_PIN_MOSI     7
-#define HB_SPI_PIN_MISO     2
-#define HB_SPI_PIN_CS       0
-#define HB_SPI_PIN_DRDY     4
-#define HB_SPI_PIN_HANDSHAKE 3
 
 #endif /* BOARD_PINS_HP6_H */

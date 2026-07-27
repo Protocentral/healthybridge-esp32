@@ -2,9 +2,10 @@
  * SPDX-License-Identifier: MIT
  * HealthyBridge transport HAL — the physical link under the frame codec.
  *
- * A backend brings up the link (UART or SPI slave), pushes received bytes into
- * a sink (the codec's hb_codec_feed), and transmits pre-framed bytes. Exactly
- * one backend is compiled, chosen by Kconfig (HB_TRANSPORT_UART / _SPI).
+ * The backend brings up the link, pushes received bytes into a sink (the codec's
+ * hb_codec_feed) and transmits pre-framed bytes. The vtable is kept now that
+ * UART is the only backend: it is what let the SPI slave be removed (2026-07-27)
+ * without touching the codec or any consumer.
  */
 #ifndef HB_TRANSPORT_H
 #define HB_TRANSPORT_H

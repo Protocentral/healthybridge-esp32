@@ -1,36 +1,5 @@
 menu "HealthyBridge"
 
-choice HB_TRANSPORT
-    prompt "Host link transport"
-    default HB_TRANSPORT_UART
-    help
-      Physical link to the host MCU. Exactly one backend is compiled.
-
-config HB_TRANSPORT_UART
-    bool "UART, HW RTS/CTS"
-    help
-      Framed UART 8N1 with hardware flow control. The transport for BOTH
-      products: HealthyPi 5 (RP2040 <-> ESP32-C3 @ 921600, released) and
-      HealthyPi 6 (STM32 M7 UART4 <-> ESP32-C6, see HB_UART_BAUD_HP6).
-
-      Flow control is what makes this the default. When the ESP cannot keep up,
-      RTS de-asserts and the host's transmitter halts at a byte boundary in
-      hardware — the link back-pressures instead of losing frames.
-
-config HB_TRANSPORT_SPI
-    bool "SPI slave (HealthyPi 6, superseded)"
-    help
-      FSPI (SPI2) slave with DMA, for the HealthyPi 6 host. Superseded by the
-      UART transport and kept only so the two can be compared on a board that
-      wires both.
-
-      An ESP32 SPI slave must have a transaction pre-queued before the master
-      asserts CS. On the single-core C6 a Wi-Fi burst means it sometimes is not,
-      and the master then clocks into a slave with no buffer: the frame is lost
-      and the master still reports success. Do not select this for new work.
-
-endchoice
-
 choice HB_PROFILE
     prompt "Host product profile"
     default HB_PROFILE_HP5
@@ -49,7 +18,7 @@ endchoice
 
 config HB_UART_BAUD_HP6
     int "HealthyPi 6 host-link baud"
-    depends on HB_TRANSPORT_UART && HB_PROFILE_HP6
+    depends on HB_PROFILE_HP6
     default 921600
     help
       Baud for the HealthyPi 6 UART link. Must match the M7's UART4.

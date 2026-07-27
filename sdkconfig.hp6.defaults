@@ -4,7 +4,6 @@
 # These are DEFAULTS: they seed sdkconfig.hp6 when it does not exist and are
 # ignored once it does. After changing a line here, run `./hp6.sh clean` (or
 # delete sdkconfig.hp6) or the old value stays in effect.
-CONFIG_HB_TRANSPORT_UART=y
 CONFIG_HB_PROFILE_HP6=y
 
 # Host link baud. Bring up at 921600 (bit-identical to the released HealthyPi 5
