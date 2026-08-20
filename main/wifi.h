@@ -29,6 +29,20 @@ void wifi_tick(void);
 /* Disconnect/stop STA. */
 void wifi_stop(void);
 
+/*
+ * Deferred variants for the host command path (control.c).
+ *
+ * Each records an intent and returns immediately; wifi_tick() performs the
+ * transition within a second. Use these, NOT the three functions above, from
+ * anything that must answer the host inside its 300 ms command deadline --
+ * bringing a radio up or down takes far longer than that, so running it inline
+ * reports a successful operation as a timeout. See the enum wifi_req comment in
+ * wifi.c.
+ */
+void wifi_request_sta(void);
+void wifi_request_portal(void);
+void wifi_request_stop(void);
+
 bool wifi_is_connected(void);
 bool wifi_is_ap_mode(void);
 void wifi_get_ip(char *buf, size_t n);   /* "0.0.0.0" if not connected */

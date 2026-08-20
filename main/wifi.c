@@ -79,6 +79,30 @@ static bool      s_portal_sticky;       /* portal must not time out */
 static volatile bool s_want_provision;  /* deferred portal request -> wifi_tick() */
 static volatile bool s_want_sticky;     /* stickiness for the deferred request */
 
+/*
+ * Deferred radio transition requested by the host, executed by wifi_tick().
+ *
+ * The host's command deadline is 300 ms (HB_UART_CMD_TIMEOUT_MS on the M7), and
+ * control_handle_cmd() acks only AFTER the handler returns. Every one of these
+ * transitions blows that budget: provisioning_enter() alone does esp_wifi_stop()
+ * + netif create + set_mode(APSTA) + esp_wifi_start() + httpd_start() inline.
+ * Run inline, a SUCCESSFUL "set up Wi-Fi" is therefore reported to the host as a
+ * timeout -- which was a rare curiosity while the radios came up on their own,
+ * and becomes the first thing every user does now that they do not.
+ *
+ * So the command handler only records the intent and returns; wifi_tick() picks
+ * it up within a second, in the context where esp_wifi mode changes are already
+ * required to happen. The host sees a prompt ack and then watches the real state
+ * arrive over GET_STATUS.
+ */
+enum wifi_req {
+    WIFI_REQ_NONE = 0,
+    WIFI_REQ_STA,      /* connect with stored credentials */
+    WIFI_REQ_PORTAL,   /* open the sticky provisioning SoftAP */
+    WIFI_REQ_STOP,     /* radios down */
+};
+static volatile enum wifi_req s_req;
+
 static void provisioning_enter(bool sticky);
 
 /* Reasons that mean "the AP actively rejected our credentials". Deliberately
@@ -192,12 +216,33 @@ void wifi_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     s_inited = true;
 
+#if defined(CONFIG_HB_RADIOS_OFF_AT_BOOT)
+    /*
+     * Everything above is allocation and configuration; none of it powers the
+     * PHY. esp_wifi_start() is what runs RF calibration and lights the radio,
+     * and that is the current spike that browns out a USB-powered HealthyPi 6
+     * -- so it does not happen until a host asks (HB_CMD_WIFI_ENABLE /
+     * HB_CMD_WIFI_SOFTAP), which is the whole point of CONFIG_HB_RADIOS_OFF_AT_BOOT.
+     *
+     * Deliberately NOT persisted: there is no "was enabled last time" flag on
+     * either side, because the requirement is that every boot starts quiet. A
+     * remembered "on" would reintroduce the spike on the reboot that follows a
+     * user turning Wi-Fi on -- the worst possible moment to reintroduce it.
+     *
+     * The stacks stay initialised, so GET_STATUS answers with a truthful
+     * "disconnected" (control_ack_wifi_status() falls through when neither
+     * s_sta_active nor s_ap_mode is set) and mqtt/dashboard/OpenView keep the
+     * default event loop and netif they were built against.
+     */
+    ESP_LOGI(TAG, "radios off at boot — waiting for a host enable command");
+#else
     if (cfg_have_wifi_creds()) {
         wifi_start_sta();
     } else {
         ESP_LOGW(TAG, "no Wi-Fi creds — starting SoftAP captive portal");
         wifi_start_provisioning();
     }
+#endif
 }
 
 /* Public entry: a human (dashboard button) or the host MCU (HB_CMD_WIFI_SOFTAP)
@@ -206,6 +251,12 @@ void wifi_start_provisioning(void)
 {
     provisioning_enter(true);
 }
+
+/* ---- deferred requests from the host command path ---- */
+
+void wifi_request_sta(void)    { s_req = WIFI_REQ_STA; }
+void wifi_request_portal(void) { s_req = WIFI_REQ_PORTAL; }
+void wifi_request_stop(void)   { s_req = WIFI_REQ_STOP; }
 
 static void provisioning_enter(bool sticky)
 {
@@ -308,6 +359,16 @@ void wifi_start_sta(void)
     if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
         ESP_LOGE(TAG, "wifi_start err=%d", err);
     }
+
+    /*
+     * State the power-save mode rather than inheriting it. MIN_MODEM is already
+     * the IDF default for STA, so this changes nothing today -- it pins the
+     * behaviour against a future sdkconfig edit, and records that MAX_MODEM was
+     * considered and rejected: it sleeps through more beacons, which adds
+     * latency the dashboard's SSE stream and the OpenView TCP feed would wear.
+     */
+    (void)esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+
     ESP_LOGI(TAG, "STA connecting to \"%s\"", c->wifi_ssid);
 }
 
@@ -332,6 +393,31 @@ void wifi_stop(void)
  * idle-portal timeout that hands the radio back to STA. */
 void wifi_tick(void)
 {
+    /*
+     * Host requests first, and before the AP-mode branch below: that branch
+     * returns early while a sticky portal is up, which would otherwise swallow
+     * an explicit "connect" or "turn it off" for as long as the portal lived.
+     */
+    if (s_req != WIFI_REQ_NONE) {
+        enum wifi_req req = s_req;
+
+        s_req = WIFI_REQ_NONE;
+        switch (req) {
+        case WIFI_REQ_STA:
+            wifi_start_sta();
+            break;
+        case WIFI_REQ_PORTAL:
+            provisioning_enter(true);
+            break;
+        case WIFI_REQ_STOP:
+            wifi_stop();
+            break;
+        default:
+            break;
+        }
+        return;   /* one radio transition per tick */
+    }
+
     if (s_ap_mode) {
         if (s_portal_sticky || provisioning_had_client()) {
             return;   /* someone is configuring, or the creds are known bad */

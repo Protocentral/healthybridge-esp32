@@ -73,6 +73,26 @@ static uint16_t s_conn = BLE_HS_CONN_HANDLE_NONE;
 static bool     s_advertising;
 static char     s_dev_name[32] = HB_PRODUCT_NAME;
 
+/*
+ * Whether advertising is WANTED, as distinct from whether it is currently
+ * running. Set by ble_gatt_start_adv(), cleared by ble_gatt_stop_adv().
+ *
+ * The distinction matters because advertising restarts from five places: the
+ * host-sync callback, a failed CONNECT, DISCONNECT, ADV_COMPLETE, and
+ * ble_gatt_set_name(). A gate anywhere else -- in ble_gatt_init(), or in
+ * app_main() -- is defeated the first time a phone disconnects, which silently
+ * turns the radio back on after the host switched it off. Gating inside
+ * adv_start(), which all five reach, is the one check that covers them all.
+ *
+ * Under CONFIG_HB_RADIOS_OFF_AT_BOOT this starts false, so on_sync() brings the
+ * host up without lighting the radio. Not persisted -- see wifi_init().
+ */
+#if defined(CONFIG_HB_RADIOS_OFF_AT_BOOT)
+static bool     s_adv_wanted;
+#else
+static bool     s_adv_wanted = true;
+#endif
+
 static int gap_event_cb(struct ble_gap_event *event, void *arg);
 
 bool ble_gatt_is_connected(void)  { return s_conn != BLE_HS_CONN_HANDLE_NONE; }
@@ -315,13 +335,39 @@ void ble_gatt_on_battery(uint8_t soc)
     hpi_notify(CH_BAT, &soc, sizeof(soc));
 }
 
-/* ---- Advertising ---- */
-void ble_gatt_start_adv(void)
+/* ---- Advertising ----
+ *
+ * adv_start()/adv_stop() are the mechanism; ble_gatt_start_adv()/_stop_adv() are
+ * the policy. Everything that RE-arms advertising after an event calls the
+ * mechanism, so it inherits the s_adv_wanted gate; only an explicit host command
+ * changes the policy.
+ */
+static void adv_start(void)
 {
+    /*
+     * Advertising interval, in 0.625 ms units: 500 ms - 1 s.
+     *
+     * These were left at 0, i.e. NimBLE's fast default (~30-60 ms). Advertising
+     * is continuous whenever BLE is on, so the interval sets a floor under the
+     * co-processor's average current for as long as nothing is connected -- and
+     * on a battery-powered wearable that floor is paid all day. Slowing to
+     * 500 ms-1 s cuts it by roughly an order of magnitude and costs a scanning
+     * phone a second or so of discovery latency, which is not a delay a user can
+     * distinguish from the time it takes them to look at the screen.
+     */
     struct ble_gap_adv_params adv_params = {
         .conn_mode = BLE_GAP_CONN_MODE_UND,
         .disc_mode = BLE_GAP_DISC_MODE_GEN,
+        .itvl_min  = 800,    /*  500 ms */
+        .itvl_max  = 1600,   /* 1000 ms */
     };
+
+    if (!s_adv_wanted) {
+        return;
+    }
+    if (s_advertising) {
+        return;
+    }
     struct ble_hs_adv_fields fields = {0};
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
     fields.name = (uint8_t *)s_dev_name;
@@ -336,7 +382,22 @@ void ble_gatt_start_adv(void)
     ESP_LOGI(TAG, "advertising as \"%s\"", s_dev_name);
 }
 
-void ble_gatt_stop_adv(void) { ble_gap_adv_stop(); s_advertising = false; }
+static void adv_stop(void) { ble_gap_adv_stop(); s_advertising = false; }
+
+void ble_gatt_start_adv(void)
+{
+    s_adv_wanted = true;
+    adv_start();
+}
+
+void ble_gatt_stop_adv(void)
+{
+    /* Clear the intent BEFORE stopping: ble_gap_adv_stop() can surface an
+     * ADV_COMPLETE, and if the intent were still set the re-arm path would
+     * immediately start advertising again. */
+    s_adv_wanted = false;
+    adv_stop();
+}
 
 void ble_gatt_set_name(const char *name)
 {
@@ -344,7 +405,7 @@ void ble_gatt_set_name(const char *name)
     strncpy(s_dev_name, name, sizeof(s_dev_name) - 1);
     s_dev_name[sizeof(s_dev_name) - 1] = '\0';
     ble_svc_gap_device_name_set(s_dev_name);
-    if (s_advertising) { ble_gatt_stop_adv(); ble_gatt_start_adv(); }
+    if (s_advertising) { adv_stop(); adv_start(); }
 }
 
 /* ---- GAP events ---- */
@@ -357,14 +418,14 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
             s_advertising = false;
             ESP_LOGI(TAG, "connected");
         } else {
-            ble_gatt_start_adv();
+            adv_start();
         }
         break;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnected (reason %d)", event->disconnect.reason);
         s_conn = BLE_HS_CONN_HANDLE_NONE;
         for (int i = 0; i < CH_N; i++) { s_chars[i].notify = false; }
-        ble_gatt_start_adv();
+        adv_start();
         break;
     case BLE_GAP_EVENT_SUBSCRIBE:
         for (int i = 0; i < CH_N; i++) {
@@ -375,7 +436,7 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
         }
         break;
     case BLE_GAP_EVENT_ADV_COMPLETE:
-        ble_gatt_start_adv();
+        adv_start();
         break;
     default:
         break;
@@ -383,7 +444,7 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
     return 0;
 }
 
-static void on_sync(void)  { ble_hs_id_infer_auto(0, &s_addr_type); ble_gatt_start_adv(); }
+static void on_sync(void)  { ble_hs_id_infer_auto(0, &s_addr_type); adv_start(); }
 static void on_reset(int reason) { ESP_LOGW(TAG, "BLE host reset, reason=%d", reason); }
 
 static void nimble_host_task(void *param)

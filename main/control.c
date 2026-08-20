@@ -83,29 +83,71 @@ static void control_ack(uint8_t cmd, uint8_t status)
 #endif
 }
 
+#if defined(CONFIG_HB_PROFILE_HP6)
+/*
+ * Build the HP6 link-status struct. One builder, two carriers: the GET_STATUS
+ * ack (when the host asks) and the 1 Hz unsolicited 0x61 frame (so it does not
+ * have to). They must not drift -- a host that sees a different shape depending
+ * on which one arrived has no way to tell them apart on the wire.
+ *
+ * AP mode is tested first: while the provisioning portal is up that is the state
+ * a host should show, regardless of any stale STA flags.
+ */
+static void control_build_status(struct hb_wifi_status_resp_hp6 *s)
+{
+    memset(s, 0, sizeof(*s));
+
+    if (wifi_is_ap_mode()) {
+        s->state = HB_WIFI_STATE_AP_MODE;
+    } else if (wifi_is_connected()) {
+        s->state = HB_WIFI_STATE_CONNECTED;
+    } else if (wifi_is_sta_active()) {
+        s->state = HB_WIFI_STATE_CONNECTING;
+    } else {
+        s->state = HB_WIFI_STATE_DISCONNECTED;
+    }
+    s->rssi = wifi_get_rssi();
+    wifi_get_ip4(s->ip_addr);
+    wifi_get_ssid(s->ssid, sizeof(s->ssid));
+    s->ble_adv  = ble_gatt_is_advertising() ? 1 : 0;
+    s->ble_conn = ble_gatt_is_connected()   ? 1 : 0;
+}
+#endif /* CONFIG_HB_PROFILE_HP6 */
+
 /*
  * Unsolicited link/BLE/Wi-Fi status (type 0x61), pushed at 1 Hz from the main
- * loop. Whether this goes out is a question about the TRANSPORT, not the
- * product: it asks whether the host is listening when it did not ask.
+ * loop. It asks whether the host is listening when it did not ask -- and on a
+ * UART, where either end may speak whenever it likes, the answer is yes.
  *
- * UART (both products): sent. A host reading its UART continuously receives an
- * unsolicited frame like any other. On HP5 this is the released, frozen path.
- * On HP6 the M7 must have a case for 0x61 to act on it; until then it costs one
- * 14-byte frame per second on a 20 %-utilised link and is counted as an unknown
- * type at the far end. The richer answer is still GET_STATUS, whose ack carries
- * the full 38-byte Wi-Fi struct — see control_ack_wifi_status().
+ * HP5: the released, frozen 4-byte hb_status_payload. Untouched.
  *
- * SPI (HP6): suppressed. The M7 pushes every data frame with spi_write() and no
- * RX buffer, so it samples MISO *only* inside its send_cmd() — the transceive
- * plus the 5 ms STATUS_REQ polls. A frame the ESP emits on its own is clocked
- * out and discarded unread, so sending one would burn a TX ring slot every
- * second and could delay a real CTRL_RESP the M7 is blocking on.
- *
- * Kept as a no-op rather than #if'd out at the call site so main.c needs no
- * transport knowledge and the reasoning lives in one place.
+ * HP6: the full status struct, which is what makes the M7's status cache work.
+ * Its 0x61 handler size-checks against hpi_hb_wifi_status_resp, so the 4-byte
+ * form was silently dropped and the cache never populated -- see the note in
+ * the HP6 branch below.
  */
 void control_send_status(void)
 {
+#if defined(CONFIG_HB_PROFILE_HP6)
+    /*
+     * HP6 sends the SAME struct GET_STATUS answers with, not the 4-byte
+     * hb_status_payload below.
+     *
+     * The 4-byte form was never usable by the M7: its 0x61 handler requires
+     * `len >= sizeof(struct hpi_hb_wifi_status_resp)`, so a 4-byte frame was
+     * silently discarded and data->wifi_valid was never set -- meaning the
+     * driver's status cache, and the "no round-trip" property the UART transport
+     * was supposed to buy, have never once worked. Every wifi_status() was a
+     * blocking request/response, including the 2 Hz one the M7's Link screen
+     * makes from its LVGL thread.
+     *
+     * Sending the full struct here is what makes that cache real.
+     */
+    struct hb_wifi_status_resp_hp6 s;
+
+    control_build_status(&s);
+    hb_link_send(HB_TYPE_STATUS, 0, (const uint8_t *)&s, sizeof(s));
+#else
     struct hb_status_payload s = {
         .ble_advertising = ble_gatt_is_advertising() ? 1 : 0,
         .ble_connected   = ble_gatt_is_connected()   ? 1 : 0,
@@ -113,37 +155,16 @@ void control_send_status(void)
         .wifi_ap_mode    = wifi_is_ap_mode()   ? 1 : 0,
     };
     hb_link_send(HB_TYPE_STATUS, 0, (const uint8_t *)&s, sizeof(s));
+#endif
 }
 
 #if defined(CONFIG_HB_PROFILE_HP6)
-/*
- * Answer GET_STATUS with real Wi-Fi state in the ack's data[].
- *
- * This is what the M7 actually consumes: healthybridge_spi_wifi_status() copies
- * resp->data into its own hpi_spi_wifi_status_resp and has been returning
- * -ENODATA ("link alive, state unknown") only because the ESP replied
- * data_len = 0. Filling it in needs no M7 change.
- *
- * AP mode is tested first: while the provisioning portal is up that is the state
- * a host should show, regardless of any stale STA flags.
- */
+
 static void control_ack_wifi_status(uint8_t cmd)
 {
-    struct hb_wifi_status_resp_hp6 s = { 0 };
+    struct hb_wifi_status_resp_hp6 s;
 
-    if (wifi_is_ap_mode()) {
-        s.state = HB_WIFI_STATE_AP_MODE;
-    } else if (wifi_is_connected()) {
-        s.state = HB_WIFI_STATE_CONNECTED;
-    } else if (wifi_is_sta_active()) {
-        s.state = HB_WIFI_STATE_CONNECTING;
-    } else {
-        s.state = HB_WIFI_STATE_DISCONNECTED;
-    }
-    s.rssi = wifi_get_rssi();
-    wifi_get_ip4(s.ip_addr);
-    wifi_get_ssid(s.ssid, sizeof(s.ssid));
-
+    control_build_status(&s);
     control_ack_data(cmd, HB_CTRL_STATUS_OK, &s, sizeof(s));
 }
 #endif
@@ -194,17 +215,22 @@ void control_handle_cmd(const uint8_t *payload, uint16_t len)
         control_send_status();
 #endif
         break;
+    /*
+     * The three Wi-Fi transitions are REQUESTED, not performed, here -- see the
+     * ack-ordering note below and enum wifi_req in wifi.c. wifi_tick() runs them
+     * within a second, in the context where esp_wifi mode changes are safe.
+     */
     case HB_CMD_WIFI_ENABLE:
         ESP_LOGI(TAG, "cmd WIFI_ENABLE");
-        wifi_start_sta();
+        wifi_request_sta();
         break;
     case HB_CMD_WIFI_DISABLE:
         ESP_LOGI(TAG, "cmd WIFI_DISABLE");
-        wifi_stop();
+        wifi_request_stop();
         break;
     case HB_CMD_WIFI_SOFTAP:
         ESP_LOGI(TAG, "cmd WIFI_SOFTAP");
-        wifi_start_provisioning();
+        wifi_request_portal();
         break;
     default:
         ESP_LOGD(TAG, "unknown cmd 0x%02x", cmd);
@@ -212,9 +238,18 @@ void control_handle_cmd(const uint8_t *payload, uint16_t len)
         break;
     }
 
-    /* Ack after the handler has run, so the M7 sees the command's effect and its
+    /*
+     * Ack after the handler has run, so the M7 sees the command's effect and its
      * acknowledgement in that order. Unknown commands are still answered — a
-     * reply the caller can reject beats a full timeout. */
+     * reply the caller can reject beats a full timeout.
+     *
+     * That ordering only holds for handlers that are fast. It is NOT true of the
+     * Wi-Fi transitions, and cannot be made true: the host's deadline is 300 ms
+     * and bringing a radio up is comfortably longer, so those handlers record an
+     * intent and return, and the ack here means "request accepted", not "radio
+     * up". The host learns the outcome from GET_STATUS. Do not "fix" this by
+     * moving the work back inline — that reports success as a timeout.
+     */
     /* 0/1 literals, not HB_CTRL_STATUS_*: those live in healthybridge_hp6.h,
      * which is not included in the HP5 build. */
     if (!acked) {

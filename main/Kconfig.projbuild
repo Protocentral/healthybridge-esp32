@@ -32,6 +32,33 @@ config HB_UART_BAUD_HP6
       ends (C6 PLL_F80M 80 MHz / 40; STM32 PCLK1 100 MHz / 50), so there is no
       baud error, and the offered load is only ~19 kB/s either way.
 
+config HB_RADIOS_OFF_AT_BOOT
+    bool "Start with both radios down; wait for the host to enable them"
+    default y if HB_PROFILE_HP6
+    default n
+    help
+      Bring the Wi-Fi and BLE stacks up at boot but start NEITHER radio, until
+      the host MCU asks via HB_CMD_WIFI_ENABLE / HB_CMD_WIFI_SOFTAP /
+      HB_CMD_BLE_ADV_START.
+
+      Default behaviour without this is that app_main() starts both radios
+      unconditionally: NimBLE advertises forever, and Wi-Fi either connects STA
+      or -- on a unit with no stored credentials, i.e. every factory-fresh one --
+      opens a SoftAP captive portal that is sticky and therefore never times out.
+      On HealthyPi 6 that happens ~220 ms into the M7's bring-up, concurrent with
+      SDRAM, backlight, sensor init and USB enumeration. A unit powered only from
+      USB browns out and resets: the BQ24074's input ceiling is strapped in
+      hardware, so drawing less is the only lever firmware has.
+
+      Note what is still initialised: esp_netif, the default event loop,
+      esp_wifi_init() and the NimBLE host. Only esp_wifi_start() (which powers
+      the PHY and runs calibration -- the actual current spike) and
+      ble_gap_adv_start() are withheld. GET_STATUS answers correctly throughout,
+      and mqtt/dashboard/OpenView keep the event loop and netif they depend on.
+
+      Default n for HealthyPi 5, whose host may never send an enable command and
+      whose shipped behaviour is frozen.
+
 comment "HP6-only consumers (BLE / Wi-Fi / dashboard / MQTT stay shared)"
 
 config HB_ENABLE_OPENVIEW

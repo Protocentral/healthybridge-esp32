@@ -10,3 +10,15 @@ CONFIG_HB_PROFILE_HP6=y
 # link, so a failure is unambiguously an HP6 problem), then raise both ends to
 # 2000000 once the link is clean.
 CONFIG_HB_UART_BAUD_HP6=2000000
+
+# Wi-Fi TX power ceiling, in dBm.
+#
+# 20 dBm (100 mW) is the IDF maximum and was in force purely by default -- it was
+# never a decision. Peak TX current is the single largest term in the HealthyPi 6
+# power budget, and the BQ24074's input ceiling is strapped in hardware, so a
+# USB-powered unit has no headroom to spend on transmit power it does not need.
+# 13 dBm (20 mW) is a quarter of the range at a fifth of the peak draw, and the
+# co-processor is normally within a few metres of the phone or AP it is talking
+# to. Raise it if a deployment genuinely needs the range, and re-measure the
+# brownout margin when you do.
+CONFIG_ESP_PHY_MAX_WIFI_TX_POWER=13

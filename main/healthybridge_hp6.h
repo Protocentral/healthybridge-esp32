@@ -159,11 +159,28 @@ struct hb_ctrl_resp_hp6 {
  * is 8 (header) + 4 (ctrl resp) + sizeof(this) + 2 (CRC) = 52 B. 12 B of
  * headroom — a wider status payload needs the slot widened first.
  */
+/*
+ * Carried two ways, and they must stay the same shape:
+ *   - as the ack data of GET_STATUS (0x30), when the host asks;
+ *   - as the payload of an unsolicited HB_TYPE_STATUS (0x61) at 1 Hz.
+ * The second is what lets the M7 answer wifi_status() from cache with no
+ * round-trip. It only started working when control_send_status() was changed to
+ * emit THIS struct: it used to send the 4-byte hb_status_payload, and the M7
+ * requires `len >= sizeof(hpi_hb_wifi_status_resp)`, so every frame was silently
+ * size-rejected and the cache never populated once.
+ *
+ * The two trailing BLE bytes are appended, never inserted, so version skew
+ * degrades instead of corrupting: an older M7 against a newer ESP ignores the
+ * tail (it copies MIN(data_len, out_cap)), and a newer M7 against an older ESP
+ * fails the >= check and simply keeps polling. Keep additions at the tail.
+ */
 struct hb_wifi_status_resp_hp6 {
     uint8_t state;         /* HB_WIFI_STATE_* */
     int8_t  rssi;          /* dBm, valid when connected; 0 otherwise */
     uint8_t ip_addr[4];    /* IPv4, a.b.c.d order; 0.0.0.0 when no lease */
     char    ssid[32];      /* connected SSID, NUL-terminated; "" when not */
+    uint8_t ble_adv;       /* 1 = advertising */
+    uint8_t ble_conn;      /* 1 = a central is connected */
 } __attribute__((packed));
 
 /* Match the M7's HPI_WIFI_STATE_* values exactly. */
@@ -175,7 +192,7 @@ struct hb_wifi_status_resp_hp6 {
 
 /* ---- byte-identical-to-M7 size guards ------------------------------------ */
 _Static_assert(sizeof(struct hb_ctrl_resp_hp6)      == 4,  "hp6 control response header must be 4 bytes");
-_Static_assert(sizeof(struct hb_wifi_status_resp_hp6) == 38, "hp6 wifi status must be 38 bytes (M7 hpi_spi_wifi_status_resp)");
+_Static_assert(sizeof(struct hb_wifi_status_resp_hp6) == 40, "hp6 wifi status must be 40 bytes (M7 hpi_hb_wifi_status_resp): 38 + ble_adv + ble_conn");
 _Static_assert(sizeof(struct hb_biosig_sample_hp6)  == 32, "hp6 biosig sample must be 32 bytes");
 _Static_assert(sizeof(struct hb_biosig_payload_hp6) == 8,  "hp6 biosig payload header must be 8 bytes");
 _Static_assert(sizeof(struct hb_ppg_sample_hp6)     == 8,  "hp6 ppg sample must be 8 bytes");
