@@ -8,6 +8,17 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Host-side unit tests: codec + frozen HealthyPi 5 layouts, OpenView packer,
+  # page substituter. Plain C, no ESP-IDF; same script contributors run.
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run host tests
+        run: CC=gcc test/run_host_tests.sh
+
   # HealthyPi 5 profile (ESP32-C3). This is the job that publishes releases.
   firmware:
     runs-on: ubuntu-latest
