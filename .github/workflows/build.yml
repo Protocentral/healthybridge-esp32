@@ -90,6 +90,12 @@ jobs:
             -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.hp6.defaults"
             merge-bin -o healthybridge-hp6-merged.bin
 
+      # Each OTA slot is 1984 KB (partitions.hp6.csv) and an update has to fit
+      # the inactive one. Fail above 85% so the image cannot creep up to the
+      # slot edge unnoticed; at -Os it is ~70% today.
+      - name: Check app image size against the OTA slot
+        run: python3 tools/check_app_size.py build.hp6 0.85
+
       - name: Collect distributables
         run: |
           mkdir -p dist-hp6

@@ -17,6 +17,13 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.hp6.csv"
 # to be right in the image a unit is first flashed with.
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
+# Optimise for size (-Os) rather than the IDF default -Og. Each app now has a
+# 1984 KB slot instead of a 2 MB factory partition, and every future feature
+# has to fit in it; CI fails the build above a fixed share of the slot (see
+# .github/workflows/build.yml). For a debugging session, switch to -Og in
+# `idf.py -B build.hp6 -D SDKCONFIG=sdkconfig.hp6 menuconfig`.
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+
 # Host link baud. Bring up at 921600 (bit-identical to the released HealthyPi 5
 # link, so a failure is unambiguously an HP6 problem), then raise both ends to
 # 2000000 once the link is clean.
