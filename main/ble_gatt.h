@@ -27,6 +27,14 @@ void ble_gatt_on_vitals(const struct hb_vitals_payload *v);
 void ble_gatt_on_biosig(const struct hb_biosig_payload *b);
 void ble_gatt_on_battery(uint8_t soc);
 
+#if defined(CONFIG_HB_PROFILE_HP6)
+/* HealthyPi 6 vitals: the standard characteristics under the HP6 rules (ECG
+ * heart rate only on 0x2A37; rr/temp withheld while unavailable) plus the HP6
+ * Vitals characteristic carrying the full 16-byte record. Used instead of
+ * ble_gatt_on_vitals() on HP6. */
+void ble_gatt_on_vitals_hp6(const struct hb_vitals_payload_hp6 *v);
+#endif
+
 /* Notify only the channels in `ch_mask` (DS_CH_BIT(...)) from a BIOSIG batch.
  * ble_gatt_on_biosig() is the DS_CH_ALL case. A product whose batch does not
  * carry a channel must clear that bit — otherwise it notifies the filler, which

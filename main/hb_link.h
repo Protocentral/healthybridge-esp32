@@ -32,6 +32,12 @@ uint32_t hb_link_ppg_frames(void);
 void hb_link_get_type_counts(uint32_t *resp, uint32_t *hrv,
                              uint32_t *status_req, uint32_t *unknown);
 
+/* HealthyPi 6: VITALS (0x40) frames rejected for a payload shorter than the
+ * 16-byte hb_vitals_payload_hp6 (e.g. a host still on the 12-byte form). Such
+ * frames are counted in `vitals` by hb_link_get_stats() too, but nothing is
+ * published from them. Always 0 on HealthyPi 5. */
+uint32_t hb_link_vitals_rejected(void);
+
 /* CRC-valid frames received from the host, of the types it actually sends
  * (vitals, waveforms and, on HealthyPi 6, control commands and status polls).
  * Unknown types are excluded. Monotonic; the OTA self-test uses it as proof

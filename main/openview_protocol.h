@@ -154,8 +154,13 @@ const char *openview_get_error(void);
 /* ============================================================================
  * HRV Packet Type (Frame Type 0x03)
  * ============================================================================
- * HRV packets are sent at low rate (~0.2 Hz) with computed HRV metrics.
- * Uses same sync bytes and footer as waveform packets for easy parsing.
+ * HRV packets are sent at low rate with computed HRV metrics. Uses the same
+ * sync bytes and footer as waveform packets for easy parsing.
+ *
+ * HealthyPi 6 sends one per vitals update (~1 Hz), interleaved with the 0x02
+ * data packets on the same stream. It is the only OpenView packet with room
+ * for the vitals flags, so it is where a client learns which sensor produced
+ * the heart rate. A zero metric means "not available".
  *
  * HRV Frame Layout (27 bytes total):
  *  Offset  Bytes  Field              Type       Description
@@ -174,7 +179,11 @@ const char *openview_get_error(void);
  *  19      1      HRV Valid          uint8      0x01=valid, 0x00=learning
  *  20      1      Arrhythmia Flags   uint8      Bit flags for arrhythmias
  *  21      2      Mean RR            uint16_le  Mean RR interval in ms
- *  23      2      Reserved           uint16_le  Future use
+ *  23      2      Vitals Flags       uint16_le  Low byte: HealthyPi 6 vitals flags
+ *                                               (0x01 HR from PPG, 0x02 ECG lead
+ *                                               off, 0x04 PPG weak, 0x08 motion);
+ *                                               high byte 0. Was "Reserved", sent
+ *                                               as 0, before HealthyBridge 1.1.0.
  *  25      2      Footer             uint8[2]   0x00, 0x0B
  *  ------  -----  ----------------   ---------  ---------------------------
  *         27 BYTES TOTAL
@@ -194,6 +203,7 @@ typedef struct {
     uint8_t hrv_valid;        /* 1 if HRV data is valid */
     uint8_t arrhythmia_flags; /* Arrhythmia detection flags */
     uint16_t mean_rr_ms;      /* Mean RR interval in ms */
+    uint16_t vitals_flags;    /* offset 23: low byte = HP6 vitals flags */
 } openview_hrv_data_t;
 
 /**

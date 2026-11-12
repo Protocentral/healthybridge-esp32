@@ -21,6 +21,9 @@
 #include "wifi.h"
 #include "ble_gatt.h"
 #include "mqtt_pub.h"
+#if defined(CONFIG_HB_PROFILE_HP6)
+#include "hp6_vitals.h"
+#endif
 
 static const char *TAG = "dash";
 
@@ -61,6 +64,47 @@ static void mdns_down(void)
 }
 
 /* ---- HTTP handlers ------------------------------------------------------- */
+
+/*
+ * The vitals-specific pieces of the page, per product.
+ *
+ * HP5 (released, frozen): exactly the strings the page always had.
+ *
+ * HP6: the JSON is hp6_vitals_json_members() — "hr" is the ECG heart rate and
+ * "pulse_rate" the PPG one, and anything unavailable is null. The heart-rate
+ * card relabels itself by source ("Heart Rate (ECG)" / "Pulse Rate (PPG)"), so
+ * a PPG rate is never shown under an ECG label; null shows as "--"; HRV gets a
+ * chip; ECG lead-off, weak PPG and motion raise the banner.
+ */
+#if defined(CONFIG_HB_PROFILE_HP6)
+#define DASH_HR_CARD \
+    "<div class='card hr'><span class=l id=hrl>Heart Rate</span><span class=v id=hr>--</span><span class=u>bpm</span></div>"
+#define DASH_JS_VALUES \
+    "function nv(x){return x==null?'--':x}" \
+    "function cards(j){var hl=$('hrl');" \
+    "if(j.hr!=null){$('hr').textContent=j.hr;hl.textContent='Heart Rate (ECG)'}" \
+    "else if(j.pulse_rate!=null){$('hr').textContent=j.pulse_rate;hl.textContent='Pulse Rate (PPG)'}" \
+    "else{$('hr').textContent='--';hl.textContent='Heart Rate'}" \
+    "$('spo2').textContent=j.spo2==null?'--':j.spo2.toFixed(1);$('rr').textContent=nv(j.rr);" \
+    "$('temp').textContent=j.temp==null?'--':j.temp.toFixed(1);"
+#define DASH_JS_HRV_CHIP \
+    "if(j.hrv_sdnn!=null||j.hrv_rmssd!=null)ch+='<span class=chip>SDNN <b>'+nv(j.hrv_sdnn)+" \
+    "'</b> &middot; RMSSD <b>'+nv(j.hrv_rmssd)+'</b> ms'+(j.hrv_lf_hf!=null?" \
+    "' &middot; LF/HF <b>'+j.hrv_lf_hf.toFixed(1)+'</b>':'')+'</span>';"
+#define DASH_JS_ALERTS \
+    "var m=[];if(j.ecg_lead_off)m.push('ECG lead off');if(j.ppg_weak)m.push('PPG signal weak');" \
+    "if(j.motion)m.push('Motion');"
+#else
+#define DASH_HR_CARD \
+    "<div class='card hr'><span class=l>Heart Rate</span><span class=v id=hr>--</span><span class=u>bpm</span></div>"
+#define DASH_JS_VALUES \
+    "function cards(j){" \
+    "$('hr').textContent=j.hr;$('spo2').textContent=j.spo2;$('rr').textContent=j.rr;" \
+    "$('temp').textContent=(j.temp/100).toFixed(1);"
+#define DASH_JS_HRV_CHIP ""
+#define DASH_JS_ALERTS \
+    "var m=[];if(j.flags&8)m.push('ECG lead off');if(j.flags&16)m.push('PPG lead off');"
+#endif
 
 /* The page is sent in chunks (raw string literals, no snprintf) so the CSS '%'
  * signs need no escaping and we avoid a large stack/static buffer. Only the two
@@ -119,7 +163,7 @@ static esp_err_t page_get(httpd_req_t *req)
     "<button class=ic id=cfg title=Settings>&#9881;</button></header>"
     "<div class=banner id=banner hidden></div>"
     "<section class=vitals>"
-    "<div class='card hr'><span class=l>Heart Rate</span><span class=v id=hr>--</span><span class=u>bpm</span></div>"
+    DASH_HR_CARD
     "<div class='card spo2'><span class=l>SpO&#8322;</span><span class=v id=spo2>--</span><span class=u>%</span></div>"
     "<div class='card rr'><span class=l>Respiration</span><span class=v id=rr>--</span><span class=u>rpm</span></div>"
     "<div class='card temp'><span class=l>Temperature</span><span class=v id=temp>--</span><span class=u>&deg;C</span></div>"
@@ -166,15 +210,14 @@ static esp_err_t page_get(httpd_req_t *req)
     "function push(b,a){if(!a)return;for(var i=0;i<a.length;i++)b.push(a[i]);"
     "while(b.length>CAP)b.shift()}"
     "function plot(){draw($('ecg'),WB.e,'#69f0ae');draw($('ppg'),WB.p,'#40c4ff')}"
-    "function cards(j){"
-    "$('hr').textContent=j.hr;$('spo2').textContent=j.spo2;$('rr').textContent=j.rr;"
-    "$('temp').textContent=(j.temp/100).toFixed(1);"
+    DASH_JS_VALUES
     "var ch='<span class=chip>BLE '+dot(j.ble)+'</span>'+"
     "'<span class=chip>MQTT '+dot(j.mqtt)+'</span>'+"
     "'<span class=chip>Wi-Fi '+((j.rssi!=null)?('<b>'+j.rssi+'</b> dBm'):dot(j.wifi))+'</span>';"
     "if(j.bat!=null)ch+='<span class=chip>'+(j.chg?'&#9889;':'&#128267;')+' <b>'+j.bat+'</b>%</span>';"
+    DASH_JS_HRV_CHIP
     "$('chips').innerHTML=ch;"
-    "var m=[];if(j.flags&8)m.push('ECG lead off');if(j.flags&16)m.push('PPG lead off');"
+    DASH_JS_ALERTS
     "var bn=$('banner');if(m.length){bn.innerHTML='&#9888; '+m.join(' &nbsp;&bull;&nbsp; ');"
     "bn.hidden=false}else bn.hidden=true}"
     "function feed(j){cards(j);if(j.e)push(WB.e,j.e);if(j.p)push(WB.p,j.p);plot()}"
@@ -201,8 +244,18 @@ static esp_err_t page_get(httpd_req_t *req)
 
 static esp_err_t vitals_get(httpd_req_t *req)
 {
+#if defined(CONFIG_HB_PROFILE_HP6)
+    /* All-zero (so every vital null) until the first vitals frame arrives. */
+    struct hb_vitals_payload_hp6 h;
+    data_store_get_vitals_hp6(&h);
+    char vit[HP6_VITALS_JSON_MAX];
+    if (hp6_vitals_json_members(&h, vit, sizeof(vit)) < 0) {
+        vit[0] = '\0';
+    }
+#else
     struct hb_vitals_payload v;
     data_store_get_vitals(&v);
+#endif
 
     /* Wi-Fi RSSI when associated; "null" otherwise (the page falls back to a
      * connected/disconnected dot). */
@@ -219,6 +272,19 @@ static esp_err_t vitals_get(httpd_req_t *req)
     bool bv = data_store_get_battery(&soc, &chg, NULL);
     if (bv) { snprintf(bat, sizeof(bat), "%u", soc); } else { strcpy(bat, "null"); }
 
+#if defined(CONFIG_HB_PROFILE_HP6)
+    char json[HP6_VITALS_JSON_MAX + 112];
+    int n = snprintf(json, sizeof(json),
+        "{%s,\"ble\":%d,"
+        "\"mqtt\":%d,\"wifi\":%d,\"rssi\":%s,\"bat\":%s,\"chg\":%d}",
+        vit,
+        ble_gatt_is_connected() ? 1 : 0,
+        mqtt_pub_is_connected() ? 1 : 0,
+        wifi_is_connected() ? 1 : 0, rssi, bat, (bv && chg) ? 1 : 0);
+    if (n < 0 || (size_t)n >= sizeof(json)) {
+        n = (int)strlen(json);
+    }
+#else
     char json[224];
     int n = snprintf(json, sizeof(json),
         "{\"hr\":%u,\"spo2\":%u,\"rr\":%u,\"temp\":%d,\"flags\":%u,\"ble\":%d,"
@@ -227,6 +293,7 @@ static esp_err_t vitals_get(httpd_req_t *req)
         ble_gatt_is_connected() ? 1 : 0,
         mqtt_pub_is_connected() ? 1 : 0,
         wifi_is_connected() ? 1 : 0, rssi, bat, (bv && chg) ? 1 : 0);
+#endif
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, n);
@@ -294,8 +361,17 @@ static void sse_append(char *buf, size_t sz, int *o, const char *fmt, ...)
  * smoothly instead of re-fetching a whole window. */
 static int sse_build(char *buf, size_t sz, uint32_t *sent)
 {
+#if defined(CONFIG_HB_PROFILE_HP6)
+    struct hb_vitals_payload_hp6 h;
+    data_store_get_vitals_hp6(&h);
+    char vit[HP6_VITALS_JSON_MAX];
+    if (hp6_vitals_json_members(&h, vit, sizeof(vit)) < 0) {
+        vit[0] = '\0';
+    }
+#else
     struct hb_vitals_payload v;
     data_store_get_vitals(&v);
+#endif
 
     char rssi[8];
     wifi_ap_record_t ap;
@@ -319,9 +395,15 @@ static int sse_build(char *buf, size_t sz, uint32_t *sent)
 
     int o = 0;
     sse_append(buf, sz, &o,
+#if defined(CONFIG_HB_PROFILE_HP6)
+        "data: {%s,"
+        "\"ble\":%d,\"mqtt\":%d,\"wifi\":%d,\"rssi\":%s,\"bat\":%s,\"chg\":%d,\"e\":[",
+        vit,
+#else
         "data: {\"hr\":%u,\"spo2\":%u,\"rr\":%u,\"temp\":%d,\"flags\":%u,"
         "\"ble\":%d,\"mqtt\":%d,\"wifi\":%d,\"rssi\":%s,\"bat\":%s,\"chg\":%d,\"e\":[",
         v.hr, v.spo2, v.rr, v.temp_c_x100, v.flags,
+#endif
         ble_gatt_is_connected() ? 1 : 0, mqtt_pub_is_connected() ? 1 : 0,
         wifi_is_connected() ? 1 : 0, rssi, bat, (bv && chg) ? 1 : 0);
     for (size_t i = 0; i < ne && o < (int)sz - 16; i++) {

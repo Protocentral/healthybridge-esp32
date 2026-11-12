@@ -8,7 +8,7 @@
  *
  * The frame header, flags and CRC are shared (see healthybridge.h / hb_codec).
  * Structs here are byte-identical to the M7-side contract
- * (drivers/misc/healthybridge_esp32/healthybridge_esp32_spi_protocol.h) so the
+ * (drivers/misc/healthybridge_esp32/healthybridge_esp32_protocol.h) so the
  * same bytes decode on both ends.
  *
  * ---- Unified type table (HP5 IDs are canonical/frozen) --------------------
@@ -16,7 +16,7 @@
  *   0x10  PPG batch          —                         ✅ hb_ppg_payload_hp6
  *   0x20  Biosignal batch    ✅ hb_biosig_payload      ✅ hb_biosig_payload_hp6  (profile-selected)
  *   0x30  Respiration batch  —                         ✅ hb_wave_payload_hp6
- *   0x40  VITALS             ✅ hb_vitals_payload (7B) ✅ hb_vitals_payload_hp6 (12B) (profile-selected)
+ *   0x40  VITALS             ✅ hb_vitals_payload (7B) ✅ hb_vitals_payload_hp6 (16B) (profile-selected)
  *   0x41  BATTERY            ✅ hb_battery_payload      (adopt HP5 semantics)
  *   0x42  HRV                —                         ✅ hb_hrv_payload_hp6  (MOVED off 0x41)
  *   0x50  CTRL_CMD           ✅                         ✅ (shared)
@@ -86,16 +86,53 @@ struct hb_wave_payload_hp6 {
     int32_t  samples[];
 } __attribute__((packed));
 
-/* ---- VITALS (type 0x40, HP6 profile): 12 bytes --------------------------- */
+/* ---- VITALS (type 0x40, HP6 profile): 16 bytes ---------------------------
+ *
+ * Byte-for-byte the M7's `struct hp6_vitals` (app_m7/src/core/sample_formats.h),
+ * the same 16 bytes that travel on the M7 sample bus, in the .HP6 recording and
+ * on the USB stream. One layout everywhere, so nothing on the link narrows it.
+ *
+ *   off  size  field           unit / meaning
+ *   0    2     hr_bpm          beats/min; WHICH SENSOR is in flags (bit 0)
+ *   2    2     spo2_x10        SpO2 % x10 (985 = 98.5 %)
+ *   4    2     rr_bpm          breaths/min
+ *   6    2     temp_c_x100     degC x100, signed
+ *   8    2     hrv_sdnn_ms     SDNN, ms
+ *   10   2     hrv_rmssd_ms    RMSSD, ms
+ *   12   2     hrv_lf_hf_x10   LF/HF ratio x10
+ *   14   1     flags           HB_VIT_HP6_* below
+ *   15   1     reserved        0 on send, ignored on receive
+ *
+ * A ZERO in any measurement field means "not available" (no lock, sensor
+ * unplugged, not computed) and must be shown as absent, never as 0.
+ *
+ * Replaces the 12-byte {timestamp, u8 hr, u8 spo2, u8 rr, x10 temp, flags}
+ * form, which clamped HR to 8 bits and dropped HRV and every flag. HP6 never
+ * shipped, so 0x40 changed in place. A payload shorter than 16 bytes — the old
+ * form included — is rejected and counted, not decoded; bytes past 16 are
+ * ignored, so fields may only ever be appended.
+ */
 struct hb_vitals_payload_hp6 {
-    uint32_t timestamp_ms;
-    uint8_t  heart_rate_bpm;
-    uint8_t  spo2_percent;
-    uint8_t  resp_rate_bpm;
+    uint16_t hr_bpm;
+    uint16_t spo2_x10;
+    uint16_t rr_bpm;
+    int16_t  temp_c_x100;
+    uint16_t hrv_sdnn_ms;
+    uint16_t hrv_rmssd_ms;
+    uint16_t hrv_lf_hf_x10;
+    uint8_t  flags;
     uint8_t  reserved;
-    int16_t  temp_celsius_x10;
-    uint16_t status_flags;
 } __attribute__((packed));
+
+/* hb_vitals_payload_hp6.flags — same values as the M7's HP6_VIT_*.
+ *
+ * HR_FROM_PPG is the provenance of hr_bpm. A rate with it set is a PPG pulse
+ * rate and must NEVER be presented as an ECG heart rate, by any consumer. */
+#define HB_VIT_HP6_HR_FROM_PPG   0x01  /* hr_bpm is a PPG pulse rate, not ECG     */
+#define HB_VIT_HP6_ECG_LEAD_OFF  0x02  /* >=1 ECG electrode off; ECG HR gated     */
+#define HB_VIT_HP6_PPG_WEAK      0x04  /* low perfusion / finger off: SpO2 and a  */
+                                       /* PPG-sourced HR are provisional          */
+#define HB_VIT_HP6_MOTION        0x08  /* board moving; qualifies, hides nothing  */
 
 /* ---- HRV (type 0x42): 20 bytes ------------------------------------------- */
 struct hb_hrv_payload_hp6 {
@@ -136,6 +173,30 @@ struct hb_ctrl_resp_hp6 {
 
 #define HB_CTRL_STATUS_OK          0x00
 #define HB_CTRL_STATUS_UNKNOWN_CMD 0x01
+
+/* ---- HP6-only control commands (CTRL_CMD payload[0]) --------------------
+ * 0x31 is free in both the frozen HP5 table and the M7's HPI_HB_CMD_* table. */
+#define HB_CMD_GET_VERSION   0x31   /* -> CTRL_RESP, data = hb_version_resp_hp6 */
+
+/* ---- VERSION, carried as GET_VERSION's CTRL_RESP data (36 bytes) ---------
+ *
+ * Mirrors `struct hpi_hb_version_resp` on the M7, which declared it long before
+ * anything sent it. Filled from esp_app_get_description()->version, i.e. the
+ * repo's version.txt (PROJECT_VER).
+ *
+ *   major/minor/patch  the leading "MAJOR.MINOR.PATCH" of version_string;
+ *                      all three 0 when it does not start that way
+ *   reserved           0
+ *   version_string     the full string, NUL-terminated, truncated to 31
+ *                      characters, zero-padded to 32 bytes
+ */
+struct hb_version_resp_hp6 {
+    uint8_t major;
+    uint8_t minor;
+    uint8_t patch;
+    uint8_t reserved;
+    char    version_string[32];
+} __attribute__((packed));
 
 /* ---- WI-FI STATUS, carried as GET_STATUS's CTRL_RESP data ----------------
  *
@@ -198,7 +259,8 @@ _Static_assert(sizeof(struct hb_biosig_payload_hp6) == 8,  "hp6 biosig payload h
 _Static_assert(sizeof(struct hb_ppg_sample_hp6)     == 8,  "hp6 ppg sample must be 8 bytes");
 _Static_assert(sizeof(struct hb_ppg_payload_hp6)    == 8,  "hp6 ppg payload header must be 8 bytes");
 _Static_assert(sizeof(struct hb_wave_payload_hp6)   == 8,  "hp6 wave payload header must be 8 bytes");
-_Static_assert(sizeof(struct hb_vitals_payload_hp6) == 12, "hp6 vitals payload must be 12 bytes");
+_Static_assert(sizeof(struct hb_vitals_payload_hp6) == 16, "hp6 vitals payload must be 16 bytes (M7 struct hp6_vitals)");
+_Static_assert(sizeof(struct hb_version_resp_hp6)   == 36, "hp6 version reply must be 36 bytes (M7 hpi_hb_version_resp)");
 _Static_assert(sizeof(struct hb_hrv_payload_hp6)    == 20, "hp6 hrv payload must be 20 bytes");
 
 #endif /* HEALTHYBRIDGE_HP6_H */

@@ -333,7 +333,7 @@ int openview_pack_hrv_packet(const openview_hrv_data_t *data, uint8_t *packet, s
     packet[19] = data->hrv_valid;
     packet[20] = data->arrhythmia_flags;
     encode_uint16_le(&packet[21], data->mean_rr_ms);
-    encode_uint16_le(&packet[23], 0);  /* Reserved */
+    encode_uint16_le(&packet[23], data->vitals_flags);  /* was Reserved (0) */
 
     /* Footer (2 bytes) */
     packet[25] = OPENVIEW_FOOTER_0;
@@ -383,6 +383,7 @@ int openview_unpack_hrv_packet(const uint8_t *packet, size_t len, openview_hrv_d
     data->hrv_valid = packet[19];
     data->arrhythmia_flags = packet[20];
     data->mean_rr_ms = decode_uint16_le(&packet[21]);
+    data->vitals_flags = decode_uint16_le(&packet[23]);
 
     return 0;
 }

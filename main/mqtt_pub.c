@@ -13,6 +13,10 @@
 #include "hb_product.h"
 #include "cfg.h"
 #include "wifi.h"
+#if defined(CONFIG_HB_PROFILE_HP6)
+#include "data_store.h"
+#include "hp6_vitals.h"
+#endif
 
 static const char *TAG = "mqtt";
 
@@ -115,12 +119,34 @@ void mqtt_pub_tick(const struct hb_vitals_payload *v)
         return;
     }
 
+#if defined(CONFIG_HB_PROFILE_HP6)
+    /* HP6 publishes the full record (hp6_vitals_json_members()): the ECG heart
+     * rate and the PPG pulse rate under separate keys, the source, HRV, the
+     * quality flags, and null for anything not available. `v` (HP5-shaped)
+     * cannot carry any of that. Nothing is published before the first frame. */
+    (void)v;
+    struct hb_vitals_payload_hp6 h;
+    if (!data_store_get_vitals_hp6(&h)) {
+        return;
+    }
+    char topic[64], payload[HP6_VITALS_JSON_MAX + 2];
+    snprintf(topic, sizeof(topic), "%s/vitals", s_base);
+    payload[0] = '{';
+    int m = hp6_vitals_json_members(&h, payload + 1, sizeof(payload) - 2);
+    if (m < 0) {
+        return;
+    }
+    payload[1 + m] = '}';
+    int n = m + 2;
+    esp_mqtt_client_publish(s_client, topic, payload, n, 0, 0);
+#else
     char topic[64], payload[128];
     snprintf(topic, sizeof(topic), "%s/vitals", s_base);
     int n = snprintf(payload, sizeof(payload),
                      "{\"hr\":%u,\"spo2\":%u,\"rr\":%u,\"temp\":%.2f}",
                      v->hr, v->spo2, v->rr, v->temp_c_x100 / 100.0);
     esp_mqtt_client_publish(s_client, topic, payload, n, 0, 0);
+#endif
 }
 
 bool mqtt_pub_is_connected(void) { return s_connected; }
