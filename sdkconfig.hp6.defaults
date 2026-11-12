@@ -6,6 +6,11 @@
 # delete sdkconfig.hp6) or the old value stays in effect.
 CONFIG_HB_PROFILE_HP6=y
 
+# A/B app slots for field update: otadata + ota_0/ota_1, no factory app.
+# Overrides the shared partitions.csv, which HealthyPi 5 keeps unchanged.
+# Moving a unit onto this layout needs a full erase (see flash_hp6.sh).
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.hp6.csv"
+
 # Host link baud. Bring up at 921600 (bit-identical to the released HealthyPi 5
 # link, so a failure is unambiguously an HP6 problem), then raise both ends to
 # 2000000 once the link is clean.
