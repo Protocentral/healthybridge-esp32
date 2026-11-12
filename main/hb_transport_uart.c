@@ -121,6 +121,49 @@ static int uart_send(const uint8_t *buf, size_t len)
     return (w == (int)len) ? 0 : -1;
 }
 
+#if defined(CONFIG_HB_PROFILE_HP6)
+/*
+ * HP6 receive: event-driven, never "wait for a full chunk".
+ *
+ * uart_read_bytes(..., portMAX_DELAY) returns only once the WHOLE requested
+ * length has arrived. With a 128-byte chunk that held every short frame in the
+ * driver until enough later traffic arrived to fill it: while the M7 streamed
+ * ECG a control command was answered seconds late (past the M7's 300 ms
+ * deadline), and with the link idle -- radios off, no streaming, which is the
+ * boot default and the state a firmware update runs in -- nothing was ever
+ * delivered: GET_VERSION, the 5 s keepalive and every OTA request sat in the
+ * ring while the M7 waited for an answer. Found on the bench 2026-11-12
+ * (rx=0B for 20 s while the M7 logged each command sent).
+ *
+ * The driver posts UART_DATA when its RX FIFO passes the full threshold or the
+ * line goes idle for the RX timeout (a few symbol times), so waiting on the
+ * event queue and draining what is buffered delivers a frame microseconds
+ * after its last byte. The periodic drain is a safety net for a dropped event.
+ */
+static QueueHandle_t s_uart_evq;
+
+static void hb_rx_drain(uint8_t *chunk, size_t cap)
+{
+    size_t q = 0;
+    while (uart_get_buffered_data_len(HB_UART_PORT, &q) == ESP_OK && q > 0) {
+        int n = uart_read_bytes(HB_UART_PORT, chunk, (uint32_t)(q < cap ? q : cap), 0);
+        if (n <= 0) { break; }
+        s_rx_bytes += (uint32_t)n;
+        if (s_sink) { s_sink(chunk, (size_t)n, s_sink_user); }
+    }
+}
+
+static void hb_rx_task(void *arg)
+{
+    (void)arg;
+    uint8_t chunk[HB_RX_CHUNK];
+    for (;;) {
+        uart_event_t ev;
+        (void)xQueueReceive(s_uart_evq, &ev, pdMS_TO_TICKS(100));
+        hb_rx_drain(chunk, sizeof(chunk));
+    }
+}
+#else
 static void hb_rx_task(void *arg)
 {
     (void)arg;
@@ -132,6 +175,7 @@ static void hb_rx_task(void *arg)
         if (s_sink) { s_sink(chunk, (size_t)n, s_sink_user); }
     }
 }
+#endif
 
 /*
  * Flow-control state, for the status line.
@@ -181,8 +225,13 @@ static int uart_init(void)
         .rx_flow_ctrl_thresh = HB_UART_FLOW_THRESH,
         .source_clk = UART_SCLK_DEFAULT,
     };
+#if defined(CONFIG_HB_PROFILE_HP6)
+    ESP_ERROR_CHECK(uart_driver_install(HB_UART_PORT, HB_UART_RX_BUF,
+                                        HB_UART_TX_BUF, 16, &s_uart_evq, 0));
+#else
     ESP_ERROR_CHECK(uart_driver_install(HB_UART_PORT, HB_UART_RX_BUF,
                                         HB_UART_TX_BUF, 0, NULL, 0));
+#endif
     ESP_ERROR_CHECK(uart_param_config(HB_UART_PORT, &cfg));
     ESP_ERROR_CHECK(uart_set_pin(HB_UART_PORT, HB_UART_PIN_TX, HB_UART_PIN_RX,
                                  HB_UART_PIN_RTS, HB_UART_PIN_CTS));
