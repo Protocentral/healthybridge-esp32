@@ -59,7 +59,8 @@ config HB_RADIOS_OFF_AT_BOOT
       Default n for HealthyPi 5, whose host may never send an enable command and
       whose shipped behaviour is frozen.
 
-comment "Post-update self-test (needs bootloader app rollback)"
+comment "Post-update self-test (bootloader app rollback)"
+    depends on BOOTLOADER_APP_ROLLBACK_ENABLE
 
 config HB_OTA_SELFTEST_FRAMES
     int "Host frames that prove the link after an update"
