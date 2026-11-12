@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
+  # HealthyPi 5 profile (ESP32-C3). This is the job that publishes releases.
   firmware:
     runs-on: ubuntu-latest
     permissions:
@@ -19,7 +20,7 @@ jobs:
       - name: ESP-IDF build + merge-bin (esp32c3)
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: release-v6.0
+          esp_idf_version: v6.0.1
           target: esp32c3
           path: '.'
           command: idf.py build && idf.py merge-bin -o healthybridge-esp32-merged.bin
@@ -54,3 +55,41 @@ jobs:
             ./flash.sh <PORT>               # full install (erases stored Wi-Fi/settings)
             ./flash.sh <PORT> --app-only    # update app only, keeps settings
             ```
+
+  # HealthyPi 6 profile (ESP32-C6). Build-only: releases carry the HP5 image,
+  # and this keeps the badge honest about the second target. Driven through
+  # hp6.sh so CI exercises the same script contributors run locally (own build
+  # dir + sdkconfig, seeded from sdkconfig.defaults + sdkconfig.hp6.defaults).
+  firmware-hp6:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: ESP-IDF build + merge-bin (esp32c6, HP6 profile)
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v6.0.1
+          target: esp32c6
+          path: '.'
+          command: >-
+            bash hp6.sh build &&
+            idf.py -B build.hp6
+            -D SDKCONFIG=sdkconfig.hp6
+            -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.hp6.defaults"
+            merge-bin -o healthybridge-hp6-merged.bin
+
+      - name: Collect distributables
+        run: |
+          mkdir -p dist-hp6
+          cp build.hp6/healthybridge-hp6-merged.bin         dist-hp6/
+          cp build.hp6/healthybridge_esp32c6.bin            dist-hp6/healthybridge-hp6-app.bin
+          cp build.hp6/bootloader/bootloader.bin            dist-hp6/
+          cp build.hp6/partition_table/partition-table.bin  dist-hp6/
+          cp flash_hp6.sh                                   dist-hp6/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: healthybridge-hp6-esp32c6-firmware
+          path: dist-hp6/
