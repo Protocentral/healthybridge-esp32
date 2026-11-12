@@ -96,6 +96,7 @@ client tooling keys off them on both boards.
 - **Command plane** — BLE / Wi-Fi / host commands routed to and from the host MCU; status reported back once per second
 - **OpenView streaming (HealthyPi 6)** — 50-byte binary waveform packets (type `0x02`) broadcast over raw TCP on port 5000 for the OpenView desktop client, plus one 27-byte `0x03` packet per vitals update carrying HRV and the vitals flags (which sensor produced the heart rate) (`CONFIG_HB_ENABLE_OPENVIEW`)
 - **Version query (HealthyPi 6)** — the host's `GET_VERSION` (`0x31`) command is answered with this image's version from [`version.txt`](version.txt)
+- **Firmware update through the host (HealthyPi 6)** — the M7 relays a new image over the HealthyBridge link into the inactive OTA slot; the C6 checks the read-back SHA-256 and the image before switching, and rolls back if the new image cannot hold the link (`CONFIG_HB_OTA_RECEIVER`, see [below](#firmware-updates-and-rollback-healthypi-6))
 - **Deferred radio start (HealthyPi 6)** — the Wi-Fi and BLE stacks initialise at boot but neither radio is powered until the host asks, so a USB-powered unit doesn't brown out during the M7's bring-up (`CONFIG_HB_RADIOS_OFF_AT_BOOT`)
 
 ### BLE service map
@@ -291,8 +292,10 @@ edit-build-flash loop on a unit that is already on the A/B layout.
 ### Host tests
 
 The frame codec, the OpenView packer, the HealthyPi 6 vitals / `GET_VERSION`
-contract (golden bytes and the mapping onto each consumer) and the portal page
-substituter have plain-C unit tests that need no ESP-IDF. CI runs them on every
+contract (golden bytes and the mapping onto each consumer), the HealthyPi 6
+firmware-update receiver (every request against a fake flash slot, plus golden
+frames) and the portal page substituter have plain-C unit tests that need no
+ESP-IDF. CI runs them on every
 push:
 
 ```bash
@@ -308,10 +311,18 @@ into station mode; the dashboard is reachable at **http://healthypi.local**.
 
 ## Firmware updates and rollback (HealthyPi 6)
 
-The HealthyPi 6 image uses an A/B partition table, so that the C6 can later be
-updated in the field through the M7 over the HealthyBridge link. That updater is
-still in development; what is in place now is the layout and the rollback it
-depends on.
+The HealthyPi 6 image uses an A/B partition table so that the C6 can be updated
+in the field through the M7 over the HealthyBridge link: the host PC sends the
+new image to the M7 over USB, and the M7 relays it to the C6 in frames of up to
+1016 bytes (types `0x80`/`0x81`, specified in
+[`docs/PROTOCOL.md`](docs/PROTOCOL.md#firmware-update-0x80--0x81)). The C6 writes
+it to the slot it is not running from, and switches to it only on a final
+`COMMIT` once the SHA-256 read back from flash matches the digest announced at
+the start and ESP-IDF has validated the image. The M7 checks the release
+signature before it sends that `COMMIT`. Anything else — a refused, aborted or
+abandoned transfer — leaves the running image and the boot selection alone. The
+receiver is [`main/hb_ota.c`](main/hb_ota.c) (pure C, host-tested) and
+[`main/hb_ota_esp.c`](main/hb_ota_esp.c); there is no Wi-Fi or HTTP upload path.
 
 | Offset | Partition | Size | |
 |---|---|---|---|
@@ -355,9 +366,11 @@ LANs). It is **not hardened for hostile or untrusted networks**:
   stream leaves your network.
 - **Firmware images are not signed, and the ESP32 does not verify them** — there
   is no secure boot. Anyone with access to its USB port can reflash it. On
-  HealthyPi 6 the planned in-field update path has the M7 check the image's
-  signature before installing it; the bootloader rollback described above
-  guards against a broken image, not a malicious one.
+  HealthyPi 6 the in-field update path relies on the M7 to check the image's
+  signature before it commits it; the C6 itself checks only integrity (the
+  SHA-256 it was promised) and that the image is a valid HealthyBridge build
+  for its chip. The bootloader rollback described above guards against a broken
+  image, not a malicious one.
 - Leave `HB_WIFI_DEFAULT_SSID`/`HB_WIFI_DEFAULT_PASS` in [`main/cfg.h`](main/cfg.h)
   **empty** in anything you build for others — they are a bench-testing
   convenience that bakes credentials into the binary.

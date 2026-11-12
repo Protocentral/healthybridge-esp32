@@ -139,3 +139,176 @@ For version 1.1.0 (seq 0):
 55 AA 51 00 28 00 00 00  31 00 24 00  01 01 00 00
 31 2E 31 2E 30 00 … (27 more 00) …  A1 9B
 ```
+
+### Firmware update (0x80 / 0x81)
+
+The M7 relays a new C6 application image — received from the host PC over USB —
+into the C6's **inactive** OTA slot. HealthyPi 6 only; HealthyPi 5 has no update
+path.
+
+**Who checks what.** The C6 image is not signed for the C6. The M7 verifies the
+release signature (ECDSA-P256 over the image's SHA-256) before it sends
+`COMMIT`. The C6 checks integrity — the SHA-256 of the bytes *actually in flash*
+must equal the digest announced at `BEGIN` — and sanity: `esp_ota_end()`
+validation (headers, segments, checksum, appended hash, chip ID) and the project
+name. It switches the boot slot only on a `COMMIT` that passes all of that. A
+refused, aborted, timed-out or interrupted transfer leaves the running image and
+the boot selection as they were.
+
+What is sent is the application binary (`build.hp6/healthybridge_esp32c6.bin`),
+not the merged image. `image_size` is its length in bytes and `sha256` its
+SHA-256.
+
+#### Frames
+
+Two frame types, flags 0, normal header and CRC:
+
+| Type | Direction | Payload |
+|---|---|---|
+| `0x80` OTA_REQ | host → C6 | `op` u8, reserved u8 (0), `param_len` u16, params |
+| `0x81` OTA_RSP | C6 → host | `op` u8 (echo), `status` u8, `data_len` u16, data |
+
+`param_len` must equal the payload length minus 4; otherwise the reply is
+`BAD_REQUEST`. Every reply carries fixed data whatever its status: the 12-byte
+ack below for `BEGIN`/`DATA`/`COMMIT`/`ABORT` (and for an unknown op), the
+52-byte status for `STATUS`.
+
+| Op | Name | Params |
+|---:|---|---|
+| `0x01` | BEGIN | `image_size` u32, `sha256`[32] — 36 bytes |
+| `0x02` | DATA | `offset` u32, then 1–1016 image bytes |
+| `0x03` | COMMIT | none |
+| `0x04` | ABORT | none |
+| `0x05` | STATUS | none |
+
+Ack (reply data for every op but STATUS), 12 bytes:
+
+| Offset | Size | Field | Meaning |
+|---:|---:|---|---|
+| 0 | 4 | `req_offset` | DATA: the request's `offset`; otherwise 0 |
+| 4 | 4 | `next_offset` | the next offset the C6 will accept; 0 with no active transfer |
+| 8 | 4 | `image_size` | the active transfer's size; 0 with no active transfer |
+
+Status (reply data for STATUS), 52 bytes:
+
+| Offset | Size | Field | Meaning |
+|---:|---:|---|---|
+| 0 | 1 | `proto_version` | 1 |
+| 1 | 1 | `state` | 0 idle, 1 receiving, 2 verifying, 3 committed (rebooting), 4 error |
+| 2 | 1 | `last_error` | the most recent error code below; 0 after a successful BEGIN |
+| 3 | 1 | `running_slot` | 0 = `ota_0`, 1 = `ota_1`, `0xFF` = other |
+| 4 | 1 | `running_img_state` | 0 valid, 1 **pending verify**, 2 new, 3 invalid, 4 aborted, 5 undefined, `0xFF` unknown |
+| 5 | 1 | `other_img_state` | same values, for the other slot; 3/4 after a rollback |
+| 6 | 2 | `max_chunk` | 1016 |
+| 8 | 4 | `bytes_received` | current or last transfer |
+| 12 | 4 | `image_size` | current or last transfer's announced size |
+| 16 | 4 | `slot_size` | capacity of the inactive slot (2,031,616), 0 if none |
+| 20 | 32 | `version` | running image version, NUL-terminated, zero-padded |
+
+Status codes (`status`, `last_error`). "Terminal" means the transfer is over:
+the handle is freed, `state` becomes error, and a new BEGIN starts from scratch.
+All other errors leave an active transfer exactly as it was.
+
+| Code | Name | When |
+|---:|---|---|
+| `0x00` | OK | |
+| `0x01` | BUSY | BEGIN for a different image while one is active; BEGIN/ABORT after COMMIT |
+| `0x02` | BAD_SIZE | BEGIN size 0 or over `slot_size`; DATA running past `image_size` |
+| `0x03` | BAD_OFFSET | DATA offset is not `next_offset` (and not a retransmit, below) |
+| `0x04` | FLASH_WRITE | erase or write failed — terminal |
+| `0x05` | DIGEST_MISMATCH | SHA-256 read back from flash differs from BEGIN's — terminal |
+| `0x06` | IMAGE_INVALID | first byte not `0xE9`, `esp_ota_end()` failed, or wrong project — terminal |
+| `0x07` | NOT_IN_TRANSFER | DATA or COMMIT with no active transfer |
+| `0x08` | RUNNING_UNCONFIRMED | BEGIN while the running image is still pending verification |
+| `0x09` | INCOMPLETE | COMMIT before `image_size` bytes arrived; resume at `next_offset` |
+| `0x0A` | FLASH_READ | reading the slot back failed — terminal |
+| `0x0B` | BOOT_SET | `esp_ota_set_boot_partition()` failed — terminal, boot slot unchanged |
+| `0x0C` | BAD_REQUEST | malformed: too short, `param_len` mismatch, chunk of 0 or > 1016 bytes |
+| `0x0D` | UNKNOWN_OP | |
+| `0x0E` | TIMEOUT | `last_error` only: no BEGIN/DATA/COMMIT for 30 s, transfer aborted itself |
+| `0x0F` | NO_SLOT | no inactive OTA slot (not the A/B partition table) |
+| `0x10` | INTERNAL | `esp_ota_begin()` failed |
+| `0x11` | ABORTED | `last_error` only: an ABORT ended the transfer |
+
+#### Rules
+
+- **Stop-and-wait.** One request outstanding. A reply answers the request with
+  the same `op` and, for DATA, the same `req_offset`; anything else is stale
+  and is discarded.
+- **BEGIN** is refused (nothing changes) for size 0, a size over the slot, no
+  slot, or a running image that is still pending verification. While a transfer
+  is active, a BEGIN with the **same size and digest restarts it from offset 0**
+  (so a BEGIN resent because its reply was lost is harmless); a different one is
+  BUSY. BEGIN does not erase the slot: each 4 KB sector is erased just before it
+  is first written, which bounds every reply by one sector erase. BEGIN does
+  clear the *inactive* otadata entry (ESP-IDF's `esp_ota_begin()`), which
+  describes the image about to be overwritten; the running image's entry, and so
+  the boot selection, is untouched.
+- **DATA** must be strictly sequential. Resending the chunk accepted last — same
+  offset, same length — is acknowledged OK with the same `next_offset` and
+  written nothing. Any other offset is BAD_OFFSET, carrying the expected
+  `next_offset`. A chunk may cross a sector boundary; sizes need not be aligned.
+- **COMMIT** requires all `image_size` bytes. It reads the slot back, hashes it,
+  compares, runs `esp_ota_end()` and the project check, sets the boot slot,
+  replies OK, waits for the reply to leave the UART (at most 200 ms) and
+  restarts. Any failure is a terminal error with the boot slot unchanged.
+- **ABORT** is always safe and always OK, except after a successful COMMIT
+  (BUSY: too late).
+- **STATUS** is answered immediately by the link's RX task, even while COMMIT is
+  hashing, so the host can tell *verifying* from *gone*.
+- **Inactivity**: a transfer with no BEGIN/DATA/COMMIT for 30 s
+  (`HB_OTA_RX_TIMEOUT_S`) aborts itself; STATUS polls do not count.
+- **Radios** may be on or off. ESP-IDF supports flash writes with Wi-Fi and BLE
+  running; radios off (the boot default) gives the fastest transfer.
+
+#### Timing
+
+| | Bound | Recommended host timeout |
+|---|---|---|
+| BEGIN reply | one sector erase (otadata), ≤ ~0.4 s | 1 s |
+| DATA reply | one sector erase + ≤ 5 page programs, ≤ ~0.45 s; ~45 ms typical when a sector is erased, a few ms otherwise | 1 s, then resend the same chunk |
+| COMMIT reply | three reads of the image + SHA-256 each, and one otadata sector erase; ~1 s typical for a 1.4 MB image | 10 s; on timeout poll STATUS rather than resending |
+| Reboot to link up | bootloader verify + app start | allow 10 s |
+| Link up to `running_img_state` = valid | 3 host frames (any type the M7 sends, STATUS included) | allow 15 s; the image rolls back by itself at 60 s |
+
+The C6 de-asserts RTS while flash is busy; a host transmit deadline shorter
+than a sector erase (~0.4 s) can abort a frame mid-way. The C6 resyncs and the
+request gets no reply, so the timeout-and-resend rule recovers it.
+
+#### After COMMIT
+
+The new image boots **pending verification** and keeps its slot only after it
+has received valid frames over this link (`main/ota_selftest.c`). **A reset or
+power-down of the C6 while `running_img_state` is pending verify rolls it back
+to the previous image.** Keep the C6 powered and talking from the COMMIT reply
+until STATUS reports the new `version` with `running_img_state` = valid. A
+rollback shows as the old `version` with `other_img_state` invalid or aborted.
+
+#### Example frames (seq 0)
+
+BEGIN for 1,448,640 bytes (`0x00161AC0`), digest `00 01 … 1F`, and its reply:
+
+```
+55 AA 80 00 28 00 00 00  01 00 24 00  C0 1A 16 00  00 01 02 … 1F  CE A8
+55 AA 81 00 10 00 00 00  01 00 0C 00  00 00 00 00  00 00 00 00  C0 1A 16 00  12 9C
+```
+
+DATA at offset 0 with the bytes `E9 06 02 20`; its reply; a DATA at `0x1000`
+when 4 is expected:
+
+```
+55 AA 80 00 0C 00 00 00  02 00 08 00  00 00 00 00  E9 06 02 20  1B C3
+55 AA 81 00 10 00 00 00  02 00 0C 00  00 00 00 00  04 00 00 00  C0 1A 16 00  ED 10
+55 AA 81 00 10 00 00 00  02 03 0C 00  00 10 00 00  04 00 00 00  C0 1A 16 00  D6 B9
+```
+
+COMMIT, ABORT and STATUS requests:
+
+```
+55 AA 80 00 04 00 00 00  03 00 00 00  62 0D
+55 AA 80 00 04 00 00 00  04 00 00 00  43 5A
+55 AA 80 00 04 00 00 00  05 00 00 00  F8 46
+```
+
+More, including the STATUS reply, are in
+[`test/test_hb_ota.c`](../test/test_hb_ota.c), which checks every one of them.
