@@ -16,9 +16,16 @@
 # Usage:
 #   ./hp6.sh                 # build
 #   ./hp6.sh build
-#   ./hp6.sh flash [PORT]    # build (if needed) + flash
+#   ./hp6.sh merge           # build + single merged image, build.hp6/healthybridge-hp6-merged.bin
+#   ./hp6.sh flash [PORT]    # build (if needed) + flash, WITHOUT erasing (dev loop)
 #   ./hp6.sh monitor [PORT]
 #   ./hp6.sh clean           # remove build.hp6 + sdkconfig.hp6
+#
+# The HP6 image uses an A/B partition table (partitions.hp6.csv: otadata +
+# ota_0/ota_1). The first flash of a unit onto that layout must be a full erase
+# plus the merged image — use ./flash_hp6.sh [PORT], not `./hp6.sh flash`.
+# On an assembled board, release the C6 from the M7's reset first:
+#   healthypi conn enable --radios none
 #
 # Requires ESP-IDF v6.0+. If idf.py isn't on PATH, set IDF_PATH (export.sh is sourced).
 set -euo pipefail
@@ -55,8 +62,9 @@ ensure_target() { [ -f "$SDKCONFIG" ] || "${IDF[@]}" set-target "$TARGET"; }
 
 case "$MODE" in
   build)   ensure_target; "${IDF[@]}" build ;;
+  merge)   ensure_target; "${IDF[@]}" build; "${IDF[@]}" merge-bin -o healthybridge-hp6-merged.bin ;;
   flash)   ensure_target; "${IDF[@]}" build; "${IDF[@]}" "${port_args[@]}" flash ;;
   monitor) "${IDF[@]}" "${port_args[@]}" monitor ;;
   clean)   rm -rf "$BUILD" "$SDKCONFIG" "$SDKCONFIG.old"; echo "cleaned $BUILD, $SDKCONFIG" ;;
-  *) echo "usage: $0 [build|flash|monitor|clean] [PORT]" >&2; exit 1 ;;
+  *) echo "usage: $0 [build|merge|flash|monitor|clean] [PORT]" >&2; exit 1 ;;
 esac

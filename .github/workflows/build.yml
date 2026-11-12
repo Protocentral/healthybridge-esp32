@@ -83,12 +83,7 @@ jobs:
           esp_idf_version: v6.0.1
           target: esp32c6
           path: '.'
-          command: >-
-            bash hp6.sh build &&
-            idf.py -B build.hp6
-            -D SDKCONFIG=sdkconfig.hp6
-            -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.hp6.defaults"
-            merge-bin -o healthybridge-hp6-merged.bin
+          command: bash hp6.sh merge
 
       # Each OTA slot is 1984 KB (partitions.hp6.csv) and an update has to fit
       # the inactive one. Fail above 85% so the image cannot creep up to the
@@ -96,14 +91,18 @@ jobs:
       - name: Check app image size against the OTA slot
         run: python3 tools/check_app_size.py build.hp6 0.85
 
+      # flash_hp6.sh reads offsets from build.hp6/flasher_args.json, so ship the
+      # outputs in that layout: unpack the artifact and run ./flash_hp6.sh there.
       - name: Collect distributables
         run: |
-          mkdir -p dist-hp6
-          cp build.hp6/healthybridge-hp6-merged.bin         dist-hp6/
-          cp build.hp6/healthybridge_esp32c6.bin            dist-hp6/healthybridge-hp6-app.bin
-          cp build.hp6/bootloader/bootloader.bin            dist-hp6/
-          cp build.hp6/partition_table/partition-table.bin  dist-hp6/
-          cp flash_hp6.sh                                   dist-hp6/
+          d=dist-hp6/build.hp6
+          mkdir -p "$d/bootloader" "$d/partition_table"
+          cp build.hp6/flasher_args.json build.hp6/flash_args \
+             build.hp6/ota_data_initial.bin build.hp6/healthybridge_esp32c6.bin \
+             build.hp6/healthybridge-hp6-merged.bin               "$d/"
+          cp build.hp6/bootloader/bootloader.bin                  "$d/bootloader/"
+          cp build.hp6/partition_table/partition-table.bin        "$d/partition_table/"
+          cp flash_hp6.sh                                         dist-hp6/
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
