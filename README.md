@@ -91,10 +91,11 @@ client tooling keys off them on both boards.
 - **BLE (NimBLE)** — advertises as "HealthyPi 5" or "HealthyPi 6" per the build profile; four standard SIG services plus the custom HealthyPi waveform and command services, so the existing phone app works unchanged (see below)
 - **Wi-Fi STA** — connects with stored credentials, auto-reconnects, and falls back to the setup portal after repeated failures; BLE/Wi-Fi share the single 2.4 GHz radio via software coexistence
 - **SoftAP captive-portal provisioning** — with no credentials, brings up an open `HealthyPi-XXXX` access point + captive DNS + HTTP form to onboard Wi-Fi, MQTT and dashboard settings, then reboots into STA
-- **MQTT publish** — publishes vitals JSON (`hr`/`spo2`/`rr`/`temp`) to `<product>/<mac>/vitals` (`healthypi5/` or `healthypi6/`) once per second (toggleable, broker URI configurable)
-- **Local web dashboard** — live vitals + Server-Sent-Events waveform streaming (ECG/PPG) with a JSON-poll fallback, battery / Wi-Fi RSSI / BLE status chips, lead-off warnings, a settings form and a re-provision button; advertised over mDNS at `http://healthypi.local`
+- **MQTT publish** — publishes vitals JSON to `<product>/<mac>/vitals` (`healthypi5/` or `healthypi6/`) once per second (toggleable, broker URI configurable). HealthyPi 5: `hr`/`spo2`/`rr`/`temp`. HealthyPi 6: the full record — `hr` (ECG only) and `pulse_rate` (PPG only) as separate keys plus `hr_src`, `spo2`, `rr`, `temp`, `hrv_sdnn`/`hrv_rmssd`/`hrv_lf_hf`, `flags` and `ecg_lead_off`/`ppg_weak`/`motion`; anything not available is `null` (see [`docs/PROTOCOL.md`](docs/PROTOCOL.md#healthypi-6-vitals-0x40))
+- **Local web dashboard** — live vitals + Server-Sent-Events waveform streaming (ECG/PPG) with a JSON-poll fallback, battery / Wi-Fi RSSI / BLE status chips, lead-off warnings, a settings form and a re-provision button; advertised over mDNS at `http://healthypi.local`. On HealthyPi 6 the heart-rate card is labelled by its source ("Heart Rate (ECG)" / "Pulse Rate (PPG)"), unavailable vitals show `--`, HRV gets a chip, and ECG lead-off / weak PPG / motion raise the banner
 - **Command plane** — BLE / Wi-Fi / host commands routed to and from the host MCU; status reported back once per second
-- **OpenView streaming (HealthyPi 6)** — 50-byte binary waveform packets broadcast over raw TCP on port 5000 for the OpenView desktop client (`CONFIG_HB_ENABLE_OPENVIEW`)
+- **OpenView streaming (HealthyPi 6)** — 50-byte binary waveform packets (type `0x02`) broadcast over raw TCP on port 5000 for the OpenView desktop client, plus one 27-byte `0x03` packet per vitals update carrying HRV and the vitals flags (which sensor produced the heart rate) (`CONFIG_HB_ENABLE_OPENVIEW`)
+- **Version query (HealthyPi 6)** — the host's `GET_VERSION` (`0x31`) command is answered with this image's version from [`version.txt`](version.txt)
 - **Deferred radio start (HealthyPi 6)** — the Wi-Fi and BLE stacks initialise at boot but neither radio is powered until the host asks, so a USB-powered unit doesn't brown out during the M7's bring-up (`CONFIG_HB_RADIOS_OFF_AT_BOOT`)
 
 ### BLE service map
@@ -110,6 +111,13 @@ Preserved verbatim from the legacy HealthyPi 5 firmware so existing clients keep
 | ECG + Respiration | `00001122-…` (128-bit) | ECG `00001424-…`, Resp `babe4a4c-…` |
 | PPG + Resp-rate | `cd5c7491-…` (128-bit) | PPG `cd5c1525-…`, RR `cd5ca86f-…` |
 | Command | `01bf7492-…` (128-bit) | TX (write) `01bf1528-…`, RX (notify) `01bf1527-…` |
+| HP6 Vitals (HealthyPi 6 only) | `46db55ea-729e-4374-bae3-43d82bd59647` | Vitals `3d4b7342-5957-463d-97c3-b68e7fe21760` (read/notify): the 16-byte vitals record, flags included |
+
+On HealthyPi 6, `0x2A37` carries the **ECG** heart rate only (0 while the rate
+comes from PPG) with its sensor-contact bits set from ECG lead-off; the PPG pulse
+rate, HRV and the quality flags are in the HP6 Vitals characteristic.
+Respiration rate and temperature are not notified while unavailable. Details in
+[`docs/PROTOCOL.md`](docs/PROTOCOL.md#healthypi-6-vitals-0x40).
 
 ## Host UART link
 
@@ -282,8 +290,10 @@ edit-build-flash loop on a unit that is already on the A/B layout.
 
 ### Host tests
 
-The frame codec, the OpenView packer and the portal page substituter have
-plain-C unit tests that need no ESP-IDF. CI runs them on every push:
+The frame codec, the OpenView packer, the HealthyPi 6 vitals / `GET_VERSION`
+contract (golden bytes and the mapping onto each consumer) and the portal page
+substituter have plain-C unit tests that need no ESP-IDF. CI runs them on every
+push:
 
 ```bash
 test/run_host_tests.sh
