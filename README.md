@@ -54,6 +54,8 @@ the framing, transport and connectivity plumbing are reusable with any UART host
 | Build / flash | `./hp5.sh`, `./flash_hp5.sh` | `./hp6.sh`, `./flash_hp6.sh` |
 | Identity (BLE / dashboard / MQTT root) | `HealthyPi 5` · `healthypi5/` | `HealthyPi 6` · `healthypi6/` |
 | Radios at boot | both started automatically | **off** until the host enables them |
+| Flash layout (4 MB) | one 2 MB `factory` app ([`partitions.csv`](partitions.csv)) | two 1984 KB OTA slots + rollback ([`partitions.hp6.csv`](partitions.hp6.csv)) |
+| Firmware update | USB only | USB; in the field through the host MCU (in development) |
 | HP6-only consumers | — | OpenView TCP waveform streaming (port 5000) |
 
 Each target keeps its own build directory and sdkconfig (`build.hp5` /
@@ -162,18 +164,22 @@ plus `flash.sh`/`flash.bat`, then `pip install esptool` and run:
 > A **full** install (merged image at `0x0`) overwrites
 > the NVS region, so it **erases stored Wi-Fi credentials and settings** — you'll
 > re-provision over the SoftAP captive portal afterwards. Use `--app-only` to
-> update the firmware while keeping settings. There is currently no over-the-air
-> (OTA) update path: the partition table has a single `factory` app, so updates
-> are over USB/serial only. *(Planned: the HealthyPi 6 target gains self-OTA —
-> `ota_0`/`ota_1` partitions + a dashboard upload endpoint; the HealthyPi 5
-> target stays USB/serial-only by design.)*
+> update the firmware while keeping settings. The HealthyPi 5 target has no
+> over-the-air (OTA) update path, by design: its partition table has a single
+> `factory` app, so updates are over USB/serial only.
+
+HealthyPi 6 images are not in releases yet. Every CI run of the `firmware-hp6`
+job uploads one as a build artifact (`healthybridge-hp6-esp32c6-firmware`):
+unpack it and use `./flash_hp6.sh` from inside it, as described under
+[Flashing a HealthyPi 6](#flashing-a-healthypi-6).
 
 ## Getting started
 
 ### 1. Install ESP-IDF
 
-This firmware targets **ESP-IDF v6.0** or later (the managed components are pinned
-in [`dependencies.lock`](dependencies.lock)). Follow the official ESP-IDF Get
+This firmware targets **ESP-IDF v6.0** or later; CI builds with **v6.0.1**, the
+version the managed components in [`dependencies.lock`](dependencies.lock) were
+resolved against. Follow the official ESP-IDF Get
 Started guide for your target —
 [esp32c3](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/get-started/)
 (HealthyPi 5) or
@@ -203,7 +209,20 @@ directory, so the two never interfere:
 ```bash
 ./hp5.sh          # HealthyPi 5  — esp32c3, build.hp5, sdkconfig.hp5
 ./hp6.sh          # HealthyPi 6  — esp32c6, build.hp6, sdkconfig.hp6
+./hp6.sh merge    # ...plus one merged image, build.hp6/healthybridge-hp6-merged.bin
 ```
+
+(`./build.sh` is the older HealthyPi 5-only wrapper around a plain `idf.py`
+build in `build/`; it is what the release job runs. It refuses to build if the
+root `sdkconfig` was made for another chip or the HealthyPi 6 profile —
+`./build.sh fullclean` starts it fresh.)
+
+HealthyPi 6 builds with `-Os`; CI fails if its app grows past 85% of an OTA
+slot (`tools/check_app_size.py`).
+
+The firmware version is the semver in [`version.txt`](version.txt). ESP-IDF
+embeds it in the app descriptor, and the boot log prints it:
+`HealthyBridge 1.1.0 for HealthyPi 6 (esp32c6) starting`.
 
 `sdkconfig.hp5`/`sdkconfig.hp6` are seeded once from `sdkconfig.defaults` plus
 the per-profile defaults and **ignored thereafter** — after editing a defaults
@@ -214,12 +233,61 @@ file, run `./hp5.sh clean` (or `./hp6.sh clean`) or the old value stays in force
 Connect the ESP32 USB Type-C port and flash:
 
 ```bash
-./hp5.sh flash <PORT>       # or ./hp6.sh flash <PORT>
+./hp5.sh flash <PORT>       # HealthyPi 5: build + flash
 ./hp5.sh monitor <PORT>     # Ctrl-] to exit
 ```
 
 `flash_hp5.sh` / `flash_hp6.sh` flash an already-built image with esptool alone,
-with no ESP-IDF environment needed.
+with no ESP-IDF environment needed. For HealthyPi 6, read the next section
+first.
+
+#### Flashing a HealthyPi 6
+
+1. **Release the C6 from reset.** On HealthyPi 6 the M7 holds the ESP32-C6 in
+   reset from boot, with both radios off, and a C6 held in reset does not
+   enumerate its USB port. Flashing then fails as if the hardware were dead.
+   Release it from the host first:
+
+   ```bash
+   healthypi conn enable --radios none     # or `hpi link on` on the M7 dev shell
+   ```
+
+   Nothing persists this: after every reboot of the board the C6 is held again.
+
+2. **First flash of the A/B layout: full erase plus the merged image.** A unit
+   that last ran firmware with the old single-`factory` partition table must
+   be moved onto the new table this way. A table cannot change any other way,
+   and this one cannot change over the air at all:
+
+   ```bash
+   ./hp6.sh                      # build (needs esptool v5+ for the next step)
+   ./flash_hp6.sh <PORT>         # erase the whole chip, write the merged image @ 0x0
+   ```
+
+   This **erases stored Wi-Fi credentials and settings**: re-provision
+   afterwards.
+
+3. **Later app-only updates** keep stored settings:
+
+   ```bash
+   ./flash_hp6.sh <PORT> --app-only
+   ```
+
+   This reads the offsets from the build, refuses if the unit's partition table
+   does not match the build's, writes the app to `ota_0` and resets `otadata`,
+   so `ota_0` boots next.
+
+`./hp6.sh flash <PORT>` (plain `idf.py flash`, no erase) is fine for the
+edit-build-flash loop on a unit that is already on the A/B layout.
+
+### Host tests
+
+The frame codec, the OpenView packer and the portal page substituter have
+plain-C unit tests that need no ESP-IDF. CI runs them on every push:
+
+```bash
+test/run_host_tests.sh
+```
 
 ### First-time provisioning
 
@@ -227,6 +295,35 @@ With no stored Wi-Fi credentials the device starts a **SoftAP captive portal** �
 join its `HealthyPi-XXXX` access point and a form will open to enter your Wi-Fi
 SSID/password and toggle the MQTT and dashboard options. The device then reboots
 into station mode; the dashboard is reachable at **http://healthypi.local**.
+
+## Firmware updates and rollback (HealthyPi 6)
+
+The HealthyPi 6 image uses an A/B partition table, so that the C6 can later be
+updated in the field through the M7 over the HealthyBridge link. That updater is
+still in development; what is in place now is the layout and the rollback it
+depends on.
+
+| Offset | Partition | Size | |
+|---|---|---|---|
+| `0x0` | bootloader | 32 KB | rollback enabled; never updated over the air |
+| `0x8000` | partition table | 4 KB | |
+| `0x9000` | `nvs` | 24 KB | same place as HealthyPi 5: settings survive app updates |
+| `0xF000` | `phy_init` | 4 KB | |
+| `0x10000` | `otadata` | 8 KB | which slot boots, and whether it has been verified |
+| `0x20000` | `ota_0` | 1984 KB | |
+| `0x210000` | `ota_1` | 1984 KB | ends at the top of the 4 MB flash |
+
+An image installed by an OTA update first boots **pending verification**. It
+keeps its slot only after it has received valid frames from the host over the
+HealthyBridge link. That link is the update path, so an image that cannot hold
+it must not stay installed. If the frames do not arrive within 60 s, or the C6
+resets before they do, the bootloader returns to the previous image. If there
+is no previous image to return to, the new one keeps running. An image flashed
+over USB is trusted as-is: the bootloader records it as valid on first boot.
+The details are in [`main/ota_selftest.c`](main/ota_selftest.c), and the timeout
+and frame count are Kconfig options (`HB_OTA_SELFTEST_*`).
+
+HealthyPi 5 keeps its single `factory` partition and has no OTA path.
 
 ## Security considerations
 
@@ -246,6 +343,11 @@ LANs). It is **not hardened for hostile or untrusted networks**:
 - **MQTT** connects with whatever the broker URI specifies; `mqtt://` is
   unencrypted. Use `mqtts://` with a broker that supports TLS if the vitals
   stream leaves your network.
+- **Firmware images are not signed, and the ESP32 does not verify them** — there
+  is no secure boot. Anyone with access to its USB port can reflash it. On
+  HealthyPi 6 the planned in-field update path has the M7 check the image's
+  signature before installing it; the bootloader rollback described above
+  guards against a broken image, not a malicious one.
 - Leave `HB_WIFI_DEFAULT_SSID`/`HB_WIFI_DEFAULT_PASS` in [`main/cfg.h`](main/cfg.h)
   **empty** in anything you build for others — they are a bench-testing
   convenience that bakes credentials into the binary.
