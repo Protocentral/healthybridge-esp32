@@ -11,6 +11,12 @@ CONFIG_HB_PROFILE_HP6=y
 # Moving a unit onto this layout needs a full erase (see flash_hp6.sh).
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.hp6.csv"
 
+# An image installed by OTA boots PENDING_VERIFY and keeps its slot only after
+# main/ota_selftest.c has seen valid frames from the M7; otherwise it rolls back.
+# This lives in the bootloader, which is never updated over the air, so it has
+# to be right in the image a unit is first flashed with.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
 # Host link baud. Bring up at 921600 (bit-identical to the released HealthyPi 5
 # link, so a failure is unambiguously an HP6 problem), then raise both ends to
 # 2000000 once the link is clean.

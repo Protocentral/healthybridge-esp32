@@ -15,6 +15,11 @@ set(hb_srcs
     "form_util.c"
 )
 
+# Post-update self-test; only meaningful with bootloader rollback (HP6 table).
+if(CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE)
+    list(APPEND hb_srcs "ota_selftest.c")
+endif()
+
 # HP6-only consumers, gated by the capability Kconfigs (default y on HB_PROFILE_HP6).
 if(CONFIG_HB_ENABLE_OPENVIEW)
     list(APPEND hb_srcs "openview_protocol.c" "wifi_server.c")
@@ -30,5 +35,5 @@ idf_component_register(
     # esp_wifi/esp_netif/esp_event = Wi-Fi STA/AP (coexists with BLE),
     # esp_http_server = captive-portal provisioning form (lwip provides DNS sockets),
     # mqtt = optional vitals publish, mdns = healthypi.local for the dashboard.
-    REQUIRES bt nvs_flash esp_driver_uart esp_driver_gpio esp_wifi esp_netif esp_event esp_http_server mqtt mdns esp_app_format
+    REQUIRES bt nvs_flash esp_driver_uart esp_driver_gpio esp_wifi esp_netif esp_event esp_http_server mqtt mdns esp_app_format app_update esp_timer
 )

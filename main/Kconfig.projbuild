@@ -59,6 +59,40 @@ config HB_RADIOS_OFF_AT_BOOT
       Default n for HealthyPi 5, whose host may never send an enable command and
       whose shipped behaviour is frozen.
 
+comment "Post-update self-test (needs bootloader app rollback)"
+
+config HB_OTA_SELFTEST_FRAMES
+    int "Host frames that prove the link after an update"
+    depends on BOOTLOADER_APP_ROLLBACK_ENABLE
+    range 1 1000
+    default 3
+    help
+      An image installed by OTA boots in PENDING_VERIFY and is kept only after
+      it receives this many CRC-valid frames from the host (vitals, waveforms,
+      control commands or status polls) — the host link is the update path, so
+      an image that cannot hold it must not keep its slot.
+
+      The HealthyPi 6 M7 sends ~1 Hz vitals with the radios off and polls
+      GET_STATUS every 2 s, so a working link passes within a few seconds.
+
+config HB_OTA_SELFTEST_TIMEOUT_S
+    int "Seconds to wait for the host before rolling back (0 = wait for reset)"
+    depends on BOOTLOADER_APP_ROLLBACK_ENABLE
+    range 0 3600
+    default 60
+    help
+      If a PENDING_VERIFY image has not proven the host link this many seconds
+      after boot, it marks itself invalid and reboots into the previous slot.
+      If no other slot holds a valid image it keeps running instead (and marks
+      itself valid), so it never rolls back into nothing.
+
+      0 disables the active rollback: the image then rolls back only when it
+      next resets (panic, watchdog, power loss, or the host's reset line), which
+      the bootloader does on its own for any image left in PENDING_VERIFY.
+
+      Images flashed over USB are never PENDING_VERIFY, so none of this applies
+      to them.
+
 comment "HP6-only consumers (BLE / Wi-Fi / dashboard / MQTT stay shared)"
 
 config HB_ENABLE_OPENVIEW

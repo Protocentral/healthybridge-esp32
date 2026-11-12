@@ -30,6 +30,7 @@
 #include "wifi.h"
 #include "mqtt_pub.h"
 #include "dashboard.h"
+#include "ota_selftest.h"
 #if defined(CONFIG_HB_ENABLE_OPENVIEW)
 #include "wifi_server.h"
 #endif
@@ -54,6 +55,7 @@ void app_main(void)
     data_store_init();
     ble_gatt_init();     /* NimBLE up; advertises on host sync */
     hb_link_init();      /* UART1 RX parser task running */
+    ota_selftest_init(); /* after an OTA: verify the host link, else roll back */
     wifi_init();         /* STA connect if provisioned; coexists with BLE */
     mqtt_pub_init();     /* optional vitals publish (cfg->mqtt_enabled) */
     dashboard_init();    /* optional local web dashboard (cfg->dashboard_enabled) */
@@ -64,6 +66,8 @@ void app_main(void)
      * reports link status back to the host. */
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
+
+        ota_selftest_tick(); /* no-op unless a new image is PENDING_VERIFY */
 
         struct hb_vitals_payload v;
         data_store_get_vitals(&v);
