@@ -25,6 +25,7 @@
 #include "esp_timer.h"
 #include "healthybridge_hp6.h"
 #include "hp6_vitals.h"
+#include "hb_ota_esp.h"
 #endif
 
 #if defined(CONFIG_HB_ENABLE_OPENVIEW)
@@ -41,6 +42,7 @@ static uint32_t s_rx_ppg;
 #if defined(CONFIG_HB_PROFILE_HP6)
 static uint32_t s_rx_resp, s_rx_hrv, s_rx_status_req;
 static uint32_t s_rx_ctrl;   /* control commands (PING, GET_STATUS poll, ...) */
+static uint32_t s_rx_ota;    /* firmware-update requests (0x80), any op */
 /* VITALS frames whose payload is shorter than the 16-byte hb_vitals_payload_hp6
  * — e.g. the retired 12-byte form from an M7 that predates it. Counted in
  * s_rx_vitals too (the frame arrived), but never decoded or published. */
@@ -90,7 +92,7 @@ uint32_t hb_link_host_frames(void)
 {
     uint32_t n = s_rx_biosig + s_rx_vitals;
 #if defined(CONFIG_HB_PROFILE_HP6)
-    n += s_rx_ppg + s_rx_resp + s_rx_hrv + s_rx_status_req + s_rx_ctrl;
+    n += s_rx_ppg + s_rx_resp + s_rx_hrv + s_rx_status_req + s_rx_ctrl + s_rx_ota;
 #endif
     return n;
 }
@@ -518,6 +520,17 @@ static void hb_dispatch(uint8_t type, uint8_t flags, uint16_t seq,
 {
     (void)user;
     static struct hb_frame_item it;   /* filled, then copied into the queue */
+#if defined(CONFIG_HB_OTA_RECEIVER)
+    /* Firmware-update requests never enter the dispatch queue: a flash erase
+     * must not stall the waveform consumers, and a queue full of waveforms
+     * must not drop an update frame. hb_ota_esp_rx() answers STATUS on the
+     * spot and hands everything else to the update task. */
+    if (type == HB_TYPE_OTA_REQ) {
+        s_rx_ota++;
+        hb_ota_esp_rx(payload, len);
+        return;
+    }
+#endif
     if (s_frame_q == NULL) {
         return;
     }
@@ -577,6 +590,7 @@ void hb_link_init(void)
         ESP_LOGE(TAG, "dispatch queue/task create failed");
         return;
     }
+    hb_ota_esp_init();    /* no-op unless CONFIG_HB_OTA_RECEIVER */
 #endif
     s_tp->set_rx_sink(hb_codec_sink, NULL);
     if (s_tp->init() != 0) {

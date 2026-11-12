@@ -39,7 +39,8 @@ void hb_link_get_type_counts(uint32_t *resp, uint32_t *hrv,
 uint32_t hb_link_vitals_rejected(void);
 
 /* CRC-valid frames received from the host, of the types it actually sends
- * (vitals, waveforms and, on HealthyPi 6, control commands and status polls).
+ * (vitals, waveforms and, on HealthyPi 6, control commands, status polls and
+ * firmware-update requests).
  * Unknown types are excluded. Monotonic; the OTA self-test uses it as proof
  * that the host link works. */
 uint32_t hb_link_host_frames(void);
