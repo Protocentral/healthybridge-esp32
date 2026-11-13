@@ -74,8 +74,14 @@ config HB_OTA_SELFTEST_FRAMES
       link is the update path, so an image that cannot hold it must not keep
       its slot.
 
-      The HealthyPi 6 M7 sends ~1 Hz vitals with the radios off and polls
-      GET_STATUS every 2 s, so a working link passes within a few seconds.
+      What the HealthyPi 6 M7 sends: vitals frames whenever it publishes
+      vitals (radios on or off, but only while its M4 is producing them);
+      waveforms only while a radio is on; firmware-update STATUS requests at
+      about 1 Hz while its update service watches a new image verify; and a
+      keepalive GET_STATUS about every 5 s when it has sent nothing else
+      (healthypi-6-fw PR #23). Its 2 s status poll is mostly answered from a
+      cache of this C6's own 1 Hz status push and does not reach the wire, so
+      do not count on it. On a working link the default passes within seconds.
 
 config HB_OTA_SELFTEST_TIMEOUT_S
     int "Seconds to wait for the host before rolling back (0 = wait for reset)"

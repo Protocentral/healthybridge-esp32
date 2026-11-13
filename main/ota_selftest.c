@@ -19,10 +19,23 @@
  *
  * "Link proven" = CONFIG_HB_OTA_SELFTEST_FRAMES CRC-valid frames received from
  * the host, of the types the M7 actually sends (vitals, waveforms, control
- * commands, status polls). Unknown types do not count. The M7 forwards vitals
- * at ~1 Hz with the radios off for exactly this purpose, and polls GET_STATUS
- * every 2 s whenever the link is up, so a working link passes within seconds
- * even if the M4 (the source of vitals) is not running.
+ * commands, status polls, firmware-update requests). Unknown types do not
+ * count. What the HealthyPi 6 M7 actually puts on the wire:
+ *
+ *  - Vitals frames, each time the M7 publishes vitals, even with the radios
+ *    off. They exist only while the M4 (the source of vitals) is producing.
+ *    Waveform frames are sent only while a radio is on.
+ *  - Firmware-update STATUS requests (0x80), about 1 Hz while the M7's update
+ *    service is watching a newly installed image boot and verify, and about
+ *    every 2 s while it sees a PENDING_VERIFY image outside an update session.
+ *  - A keepalive GET_STATUS about every 5 s when the link is up and the M7 has
+ *    sent nothing else (healthypi-6-fw PR #23, CONN_KEEPALIVE_IDLE_MS).
+ *
+ * The M7's 2 s connectivity status poll does NOT reliably reach the wire: it
+ * is mostly answered from the M7 driver's cache of this C6's own 1 Hz
+ * unsolicited status push (0x61). Do not count on it. With the radios off and
+ * the M4 silent, the keepalive is what proves the link (~11 frames in 60 s);
+ * an M7 without it may send nothing at all.
  *
  * What happens when the link never comes up
  * -----------------------------------------
