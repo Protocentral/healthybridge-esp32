@@ -2,13 +2,14 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Ashwin Whitchurch, ProtoCentral Electronics
  *
- * HealthyBridge — ESP32-C3 BLE/Wi-Fi co-processor, app entry.
+ * HealthyBridge — ESP32 BLE/Wi-Fi co-processor, app entry (ESP32-C3 on
+ * HealthyPi 5, ESP32-C6 on HealthyPi 6).
  *
  * Ingests HealthyBridge frames from the host MCU over UART1 and re-exposes them
  * over BLE, Wi-Fi, MQTT and a local web dashboard. The host owns all
  * acquisition/DSP; this MCU is pure connectivity.
  *
- *   host ──UART1 921600 RTS/CTS──▶ hb_link (parse) ─┬─▶ ble_gatt (notify)
+ *   host ──UART1 RTS/CTS─────────▶ hb_link (parse) ─┬─▶ ble_gatt (notify)
  *                                                   └─▶ data_store ─┬─▶ mqtt_pub
  *                                                                   └─▶ dashboard
  */
@@ -17,6 +18,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_app_desc.h"
 #include "nvs_flash.h"
 
 #include "healthybridge.h"
@@ -30,6 +32,8 @@
 #include "wifi.h"
 #include "mqtt_pub.h"
 #include "dashboard.h"
+#include "hb_product.h"
+#include "ota_selftest.h"
 #if defined(CONFIG_HB_ENABLE_OPENVIEW)
 #include "wifi_server.h"
 #endif
@@ -47,13 +51,16 @@ static void nvs_init(void)
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "HealthyBridge (ESP32-C3) starting");
+    /* Version from version.txt (PROJECT_VER), chip from the build target. */
+    ESP_LOGI(TAG, "HealthyBridge %s for " HB_PRODUCT_NAME " (" CONFIG_IDF_TARGET ") starting",
+             esp_app_get_description()->version);
 
     nvs_init();          /* shared by cfg + NimBLE + Wi-Fi */
     cfg_init();          /* load Wi-Fi creds + telemetry toggles from NVS */
     data_store_init();
     ble_gatt_init();     /* NimBLE up; advertises on host sync */
     hb_link_init();      /* UART1 RX parser task running */
+    ota_selftest_init(); /* after an OTA: verify the host link, else roll back */
     wifi_init();         /* STA connect if provisioned; coexists with BLE */
     mqtt_pub_init();     /* optional vitals publish (cfg->mqtt_enabled) */
     dashboard_init();    /* optional local web dashboard (cfg->dashboard_enabled) */
@@ -64,6 +71,8 @@ void app_main(void)
      * reports link status back to the host. */
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
+
+        ota_selftest_tick(); /* no-op unless a new image is PENDING_VERIFY */
 
         struct hb_vitals_payload v;
         data_store_get_vitals(&v);

@@ -38,6 +38,7 @@ static uint32_t s_rx_biosig, s_rx_vitals;
 static uint32_t s_rx_ppg;
 #if defined(CONFIG_HB_PROFILE_HP6)
 static uint32_t s_rx_resp, s_rx_hrv, s_rx_status_req;
+static uint32_t s_rx_ctrl;   /* control commands (PING, GET_STATUS poll, ...) */
 #endif
 /* Frames of a type this build has no case for. Both profiles. */
 static uint32_t s_rx_unknown;
@@ -68,6 +69,15 @@ void hb_link_get_type_counts(uint32_t *resp, uint32_t *hrv,
     if (status_req) { *status_req = 0; }
 #endif
     if (unknown)    { *unknown    = s_rx_unknown; }
+}
+
+uint32_t hb_link_host_frames(void)
+{
+    uint32_t n = s_rx_biosig + s_rx_vitals;
+#if defined(CONFIG_HB_PROFILE_HP6)
+    n += s_rx_ppg + s_rx_resp + s_rx_hrv + s_rx_status_req + s_rx_ctrl;
+#endif
+    return n;
 }
 
 int hb_link_send(uint8_t type, uint8_t flags, const uint8_t *payload, uint16_t len)
@@ -398,6 +408,9 @@ static void hb_dispatch_frame(uint8_t type, uint8_t flags, uint16_t seq,
         }
         break;
     case HB_TYPE_CTRL_CMD:
+#if defined(CONFIG_HB_PROFILE_HP6)
+        s_rx_ctrl++;
+#endif
         if (len >= 1) {
             control_handle_cmd(payload, len);
         }

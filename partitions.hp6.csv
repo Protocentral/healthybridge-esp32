@@ -1,0 +1,28 @@
+# HealthyBridge — HealthyPi 6 (ESP32-C6) partition table, 4 MB flash.
+#
+# Two equal OTA app slots and no factory app, so the C6 can be updated in the
+# field (by the M7 over the HealthyBridge link) with bootloader rollback.
+# HealthyPi 5 keeps its single-factory partitions.csv; this file is selected by
+# sdkconfig.hp6.defaults only.
+#
+#   0x000000  bootloader           (32 KB, below the table)
+#   0x008000  partition table      (4 KB)
+#   0x009000  nvs       24 KB      same offset and size as partitions.csv, so
+#                                  stored Wi-Fi / MQTT / dashboard settings
+#                                  survive any update that does not erase flash
+#   0x00F000  phy_init   4 KB      unchanged
+#   0x010000  otadata    8 KB      which slot boots, and its rollback state
+#   0x012000  (unused, 56 KB)      app slots must start on a 64 KB boundary
+#   0x020000  ota_0  1984 KB
+#   0x210000  ota_1  1984 KB       ends at 0x400000, the top of the 4 MB part
+#
+# Partition layouts cannot change over the air. Moving to this table from the
+# old single-factory layout is a full erase plus the merged image over the C6's
+# USB port (flash_hp6.sh), and stored settings do not survive that first flash.
+#
+# Name,   Type, SubType, Offset,   Size
+nvs,      data, nvs,     0x9000,   0x6000
+phy_init, data, phy,     0xf000,   0x1000
+otadata,  data, ota,     0x10000,  0x2000
+ota_0,    app,  ota_0,   0x20000,  0x1F0000
+ota_1,    app,  ota_1,   0x210000, 0x1F0000
