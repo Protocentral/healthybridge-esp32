@@ -23,6 +23,10 @@ static bool                       s_batt_valid;
 static uint8_t                    s_batt_soc;
 static bool                       s_batt_charging;
 static uint16_t                   s_batt_mv;
+#if defined(CONFIG_HB_PROFILE_HP6)
+static struct hb_vitals_payload_hp6 s_vitals_hp6;
+static bool                       s_vitals_hp6_valid;
+#endif
 
 void data_store_init(void)
 {
@@ -91,6 +95,29 @@ void data_store_push_resp(const int32_t *samples, uint16_t n)
     }
     xSemaphoreGive(s_lock);
 }
+
+#if defined(CONFIG_HB_PROFILE_HP6)
+void data_store_set_vitals_hp6(const struct hb_vitals_payload_hp6 *v)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_vitals_hp6 = *v;
+    s_vitals_hp6_valid = true;
+    xSemaphoreGive(s_lock);
+}
+
+bool data_store_get_vitals_hp6(struct hb_vitals_payload_hp6 *out)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    bool valid = s_vitals_hp6_valid;
+    if (valid) {
+        *out = s_vitals_hp6;
+    } else {
+        memset(out, 0, sizeof(*out));
+    }
+    xSemaphoreGive(s_lock);
+    return valid;
+}
+#endif
 
 void data_store_get_vitals(struct hb_vitals_payload *out)
 {

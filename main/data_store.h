@@ -12,7 +12,11 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "sdkconfig.h"
 #include "healthybridge.h"
+#if defined(CONFIG_HB_PROFILE_HP6)
+#include "healthybridge_hp6.h"
+#endif
 
 /* Per-channel waveform ring depth (samples retained). 256 @ 128 SPS ≈ 2 s,
  * enough for a live dashboard strip; ~3 KB total across the three channels. */
@@ -58,6 +62,15 @@ void data_store_push_ppg(const int32_t *red_ir_pairs, uint16_t n);
  * data_store_push_ppg(): struct-free, and the caller must have dropped
  * DS_CH_BIT(DS_CH_RESP) from its biosig mask so the ring keeps one writer. */
 void data_store_push_resp(const int32_t *samples, uint16_t n);
+
+#if defined(CONFIG_HB_PROFILE_HP6)
+/* HealthyPi 6: the full vitals record as received — HR provenance, HRV and the
+ * quality flags, none of which fit the HP5-shaped struct above. Set alongside
+ * data_store_set_vitals() (which then carries the ECG heart rate only). */
+void data_store_set_vitals_hp6(const struct hb_vitals_payload_hp6 *v);
+/* Returns false (and zeroes *out) until the first vitals frame arrives. */
+bool data_store_get_vitals_hp6(struct hb_vitals_payload_hp6 *out);
+#endif
 
 /* Readers (from BLE/Wi-Fi). */
 void data_store_get_vitals(struct hb_vitals_payload *out);

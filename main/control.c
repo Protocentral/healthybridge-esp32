@@ -13,7 +13,9 @@
 #include "control.h"
 #include "wifi.h"
 #if defined(CONFIG_HB_PROFILE_HP6)
+#include "esp_app_desc.h"
 #include "healthybridge_hp6.h"
+#include "hp6_vitals.h"
 #endif
 
 static const char *TAG = "control";
@@ -51,6 +53,8 @@ static const char *TAG = "control";
  * of degrading to a bare ack on hardware. */
 _Static_assert(sizeof(struct hb_wifi_status_resp_hp6) <= CTRL_ACK_MAX_DATA,
                "hp6 wifi status no longer fits a CTRL_RESP — raise CTRL_ACK_MAX_DATA");
+_Static_assert(sizeof(struct hb_version_resp_hp6) <= CTRL_ACK_MAX_DATA,
+               "hp6 version reply no longer fits a CTRL_RESP — raise CTRL_ACK_MAX_DATA");
 
 static void control_ack_data(uint8_t cmd, uint8_t status,
                              const void *data, uint16_t data_len)
@@ -167,6 +171,16 @@ static void control_ack_wifi_status(uint8_t cmd)
     control_build_status(&s);
     control_ack_data(cmd, HB_CTRL_STATUS_OK, &s, sizeof(s));
 }
+
+/* GET_VERSION: the running image's version (version.txt -> PROJECT_VER), as the
+ * 36-byte hb_version_resp_hp6 the M7 declares as hpi_hb_version_resp. */
+static void control_ack_version(uint8_t cmd)
+{
+    struct hb_version_resp_hp6 r;
+
+    hp6_version_resp_fill(esp_app_get_description()->version, &r);
+    control_ack_data(cmd, HB_CTRL_STATUS_OK, &r, sizeof(r));
+}
 #endif
 
 void control_handle_cmd(const uint8_t *payload, uint16_t len)
@@ -215,6 +229,13 @@ void control_handle_cmd(const uint8_t *payload, uint16_t len)
         control_send_status();
 #endif
         break;
+#if defined(CONFIG_HB_PROFILE_HP6)
+    case HB_CMD_GET_VERSION:
+        /* Like GET_STATUS: the reply carries the data, so it is the only ack. */
+        control_ack_version(cmd);
+        acked = true;
+        break;
+#endif
     /*
      * The three Wi-Fi transitions are REQUESTED, not performed, here -- see the
      * ack-ordering note below and enum wifi_req in wifi.c. wifi_tick() runs them

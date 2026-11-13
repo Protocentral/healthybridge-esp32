@@ -20,6 +20,11 @@ if(CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE)
     list(APPEND hb_srcs "ota_selftest.c")
 endif()
 
+# HP6 vitals/version mapping (pure C, host-tested by test/test_hp6_vitals.c).
+if(CONFIG_HB_PROFILE_HP6)
+    list(APPEND hb_srcs "hp6_vitals.c")
+endif()
+
 # HP6-only consumers, gated by the capability Kconfigs (default y on HB_PROFILE_HP6).
 if(CONFIG_HB_ENABLE_OPENVIEW)
     list(APPEND hb_srcs "openview_protocol.c" "wifi_server.c")

@@ -37,6 +37,9 @@
 #if defined(CONFIG_HB_ENABLE_OPENVIEW)
 #include "wifi_server.h"
 #endif
+#if defined(CONFIG_HB_PROFILE_HP6)
+#include "hp6_vitals.h"
+#endif
 
 static const char *TAG = "hb_main";
 
@@ -101,10 +104,17 @@ void app_main(void)
 #if defined(CONFIG_HB_PROFILE_HP6)
         uint32_t n_resp, n_hrv, n_sreq, n_unk;
         hb_link_get_type_counts(&n_resp, &n_hrv, &n_sreq, &n_unk);
-        char ppg_fld[64];
-        snprintf(ppg_fld, sizeof(ppg_fld), " ppg=%lu resp=%lu hrv=%lu sreq=%lu unk=%lu",
+        /* vbad = VITALS frames rejected for a short (pre-16-byte) payload. On HP6
+         * the HR= below is the ECG heart rate only; a PPG pulse rate shows as PR=. */
+        struct hb_vitals_payload_hp6 vh;
+        data_store_get_vitals_hp6(&vh);
+        char ppg_fld[112];
+        snprintf(ppg_fld, sizeof(ppg_fld),
+                 " ppg=%lu resp=%lu hrv=%lu sreq=%lu unk=%lu vbad=%lu PR=%u vflags=0x%02x",
                  (unsigned long)hb_link_ppg_frames(), (unsigned long)n_resp,
-                 (unsigned long)n_hrv, (unsigned long)n_sreq, (unsigned long)n_unk);
+                 (unsigned long)n_hrv, (unsigned long)n_sreq, (unsigned long)n_unk,
+                 (unsigned long)hb_link_vitals_rejected(),
+                 hp6_vitals_pulse_rate(&vh), vh.flags);
 #else
         const char *ppg_fld = "";
 #endif

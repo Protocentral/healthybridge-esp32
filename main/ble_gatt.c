@@ -15,6 +15,15 @@
  *   PPG (128)       svc cd5c7491..     PPG  char cd5c1525.. notify [ppg:i16 LE]
  *                                     RR   char cd5ca86f.. notify [rr:u16 LE]
  *
+ * HealthyPi 6 only, in addition:
+ *   HP6 Vitals (128) svc 46db55ea-729e-4374-bae3-43d82bd59647
+ *                    char 3d4b7342-5957-463d-97c3-b68e7fe21760  read+notify
+ *                    [the 16-byte hb_vitals_payload_hp6, verbatim]
+ * and on HP6 the standard characteristics above follow the HP6 rules in
+ * ble_gatt_on_vitals_hp6(): 0x2A37 carries the ECG heart rate only, with
+ * sensor-contact bits from ECG lead-off; RR and temperature are not notified,
+ * and read back empty, while unavailable.
+ *
  * Data is pushed by the hb_link RX path: ble_gatt_on_vitals() (1 Hz) and
  * ble_gatt_on_biosig() (per BIOSIG batch, ~16 Hz). A unified char table caches
  * the last value (for reads) and tracks CCC subscription (for notify gating).
@@ -34,6 +43,9 @@
 #include "ble_gatt.h"
 #include "hb_product.h"
 #include "hb_link.h"
+#if defined(CONFIG_HB_PROFILE_HP6)
+#include "hp6_vitals.h"
+#endif
 
 static const char *TAG = "ble_gatt";
 
@@ -57,9 +69,20 @@ static const ble_uuid128_t uuid_cmd_tx = BLE_UUID128_INIT(
     0xdc,0xad,0x7f,0xc4,0x23,0x90,0x4d,0xd4,0x96,0x8d,0x0f,0x97,0x28,0x15,0xbf,0x01);
 static const ble_uuid128_t uuid_cmd_rx = BLE_UUID128_INIT(
     0xdc,0xad,0x7f,0xc4,0x23,0x90,0x4d,0xd4,0x96,0x8d,0x0f,0x97,0x27,0x15,0xbf,0x01);
+#if defined(CONFIG_HB_PROFILE_HP6)
+/* HP6 Vitals: 46db55ea-729e-4374-bae3-43d82bd59647 / 3d4b7342-5957-463d-97c3-b68e7fe21760 */
+static const ble_uuid128_t uuid_vit6_svc = BLE_UUID128_INIT(
+    0x47,0x96,0xd5,0x2b,0xd8,0x43,0xe3,0xba,0x74,0x43,0x9e,0x72,0xea,0x55,0xdb,0x46);
+static const ble_uuid128_t uuid_vit6_chr = BLE_UUID128_INIT(
+    0x60,0x17,0xe2,0x7f,0x8e,0xb6,0xc3,0x97,0x3d,0x46,0x57,0x59,0x42,0x73,0x4b,0x3d);
+#endif
 
 /* ---- Unified characteristic table ---- */
-enum { CH_HR, CH_BAT, CH_SPO2, CH_TEMP, CH_ECG, CH_RESP, CH_PPG, CH_RR, CH_CMD_RX, CH_N };
+enum { CH_HR, CH_BAT, CH_SPO2, CH_TEMP, CH_ECG, CH_RESP, CH_PPG, CH_RR, CH_CMD_RX,
+#if defined(CONFIG_HB_PROFILE_HP6)
+       CH_VIT6,
+#endif
+       CH_N };
 
 static struct hpi_char {
     uint16_t vh;            /* value handle, filled by NimBLE */
@@ -247,6 +270,17 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
             { 0 },
         },
     },
+#if defined(CONFIG_HB_PROFILE_HP6)
+    {   /* HP6 Vitals (custom 128-bit): the full 16-byte record, flags included */
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+        .uuid = &uuid_vit6_svc.u,
+        .characteristics = (struct ble_gatt_chr_def[]){
+            { .uuid = &uuid_vit6_chr.u, .access_cb = chr_access_cb,
+              .arg = (void *)CH_VIT6, .flags = CHR_RN, .val_handle = &s_chars[CH_VIT6].vh },
+            { 0 },
+        },
+    },
+#endif
     { 0 },
 };
 
@@ -271,6 +305,45 @@ void ble_gatt_on_vitals(const struct hb_vitals_payload *v)
     int16_t temp = v->temp_c_x100;
     hpi_notify(CH_TEMP, &temp, sizeof(temp));
 }
+
+#if defined(CONFIG_HB_PROFILE_HP6)
+/* Forget a characteristic's value: no notify, and a read returns empty. */
+static void hpi_clear(int idx)
+{
+    s_chars[idx].cache_len = 0;
+}
+
+void ble_gatt_on_vitals_hp6(const struct hb_vitals_payload_hp6 *v)
+{
+    /* ECG heart rate only. A PPG pulse rate is never sent here: 0x2A37 sits next
+     * to the ECG stream, and a phone has no way to tell the two apart. The rate
+     * with its source is in the HP6 Vitals characteristic. */
+    uint8_t hr[3];
+    size_t n = hp6_ble_hr_measurement(v, hr);
+    hpi_notify(CH_HR, hr, (uint16_t)n);
+
+    uint8_t spo2[2] = { 0x00, hp6_vitals_spo2_pct(v) };
+    hpi_notify(CH_SPO2, spo2, sizeof(spo2));
+
+    /* Zero is "not available" on HP6, not a measurement. */
+    if (v->rr_bpm) {
+        uint16_t rr = v->rr_bpm;
+        hpi_notify(CH_RR, &rr, sizeof(rr));
+    } else {
+        hpi_clear(CH_RR);
+    }
+    if (v->temp_c_x100) {
+        int16_t temp = v->temp_c_x100;
+        hpi_notify(CH_TEMP, &temp, sizeof(temp));
+    } else {
+        hpi_clear(CH_TEMP);
+    }
+
+    uint8_t raw[sizeof(struct hb_vitals_payload_hp6)];
+    hp6_vitals_encode(v, raw);
+    hpi_notify(CH_VIT6, raw, sizeof(raw));
+}
+#endif
 
 void ble_gatt_on_biosig_ch(const struct hb_biosig_payload *b, uint8_t ch_mask)
 {

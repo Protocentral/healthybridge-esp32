@@ -22,7 +22,9 @@
 #include "ble_gatt.h"
 
 #if defined(CONFIG_HB_PROFILE_HP6)
+#include "esp_timer.h"
 #include "healthybridge_hp6.h"
+#include "hp6_vitals.h"
 #endif
 
 #if defined(CONFIG_HB_ENABLE_OPENVIEW)
@@ -39,6 +41,10 @@ static uint32_t s_rx_ppg;
 #if defined(CONFIG_HB_PROFILE_HP6)
 static uint32_t s_rx_resp, s_rx_hrv, s_rx_status_req;
 static uint32_t s_rx_ctrl;   /* control commands (PING, GET_STATUS poll, ...) */
+/* VITALS frames whose payload is shorter than the 16-byte hb_vitals_payload_hp6
+ * — e.g. the retired 12-byte form from an M7 that predates it. Counted in
+ * s_rx_vitals too (the frame arrived), but never decoded or published. */
+static uint32_t s_rx_vitals_bad_len;
 #endif
 /* Frames of a type this build has no case for. Both profiles. */
 static uint32_t s_rx_unknown;
@@ -69,6 +75,15 @@ void hb_link_get_type_counts(uint32_t *resp, uint32_t *hrv,
     if (status_req) { *status_req = 0; }
 #endif
     if (unknown)    { *unknown    = s_rx_unknown; }
+}
+
+uint32_t hb_link_vitals_rejected(void)
+{
+#if defined(CONFIG_HB_PROFILE_HP6)
+    return s_rx_vitals_bad_len;
+#else
+    return 0;
+#endif
 }
 
 uint32_t hb_link_host_frames(void)
@@ -112,9 +127,9 @@ int hb_link_send(uint8_t type, uint8_t flags, const uint8_t *payload, uint16_t l
  * clients. Runs in the dispatch worker task (single-threaded — statics are safe).
  * Mirrors the reference app_esp32c6_esp_idf/hl_spi.c dispatch mapping.
  */
-static uint16_t s_ov_hr;
-static uint8_t  s_ov_spo2, s_ov_rr;
-static uint16_t s_ov_temp;     /* centidegrees C (OpenView temperature units) */
+/* Latest vitals fields for the 0x02 data packets: heart_rate, spo2,
+ * respiration_rate, temperature (centidegrees C). See hp6_vitals_to_openview(). */
+static openview_data_t s_ov_vitals;
 static uint32_t s_ov_seq;
 /* Latest PPG, cached from the separate 0x10 frames. The M7 zeroes ppg_red/ppg_ir
  * inside the biosig batch ("PPG goes on its own channel") because ECG and PPG
@@ -122,12 +137,26 @@ static uint32_t s_ov_seq;
  * than from the biosig sample it is built out of. */
 static int32_t  s_ov_ppg_red, s_ov_ppg_ir;
 
-static void openview_cache_vitals(const struct hb_vitals_payload_hp6 *h)
+/*
+ * Cache the vitals for the 0x02 data packets, and send one 0x03 packet per
+ * vitals update. The 0x02 layout has no room for flags or HRV — HealthyPi
+ * Studio parses it as is — so 0x03 is the packet that says which sensor
+ * produced the heart rate (vitals_flags, offset 23). Clients that only know
+ * 0x02 step over 0x03 by its length (27 B).
+ */
+static void openview_on_vitals(const struct hb_vitals_payload_hp6 *v)
 {
-    s_ov_hr   = h->heart_rate_bpm;
-    s_ov_spo2 = h->spo2_percent;
-    s_ov_rr   = h->resp_rate_bpm;
-    s_ov_temp = (uint16_t)(h->temp_celsius_x10 * 10);   /* x10 -> centidegrees */
+    hp6_vitals_to_openview(v, &s_ov_vitals);
+
+    if (!wifi_server_is_running()) {
+        return;
+    }
+    openview_hrv_data_t hrv;
+    uint8_t pkt[OPENVIEW_HRV_PACKET_LENGTH];
+    hp6_vitals_to_openview_hrv(v, (uint32_t)(esp_timer_get_time() / 1000), &hrv);
+    if (openview_pack_hrv_packet(&hrv, pkt, sizeof(pkt)) == 0) {
+        wifi_server_send_packet(pkt, sizeof(pkt));
+    }
 }
 
 static void openview_push_biosig(const struct hb_biosig_sample_hp6 *s, uint16_t n)
@@ -147,10 +176,10 @@ static void openview_push_biosig(const struct hb_biosig_sample_hp6 *s, uint16_t 
             .ppg_red          = s_ov_ppg_red,   /* from the 0x10 PPG frames */
             .ppg_ir           = s_ov_ppg_ir,    /* (zero inside the biosig batch) */
             .ppg_valid        = 0xFF,
-            .heart_rate       = s_ov_hr,
-            .spo2             = s_ov_spo2,
-            .respiration_rate = s_ov_rr,
-            .temperature      = s_ov_temp,
+            .heart_rate       = s_ov_vitals.heart_rate,
+            .spo2             = s_ov_vitals.spo2,
+            .respiration_rate = s_ov_vitals.respiration_rate,
+            .temperature      = s_ov_vitals.temperature,
             .adc_ch1          = s[i].adc_ch1,
             .adc_ch2          = s[i].adc_ch2,
         };
@@ -164,28 +193,33 @@ static void openview_push_biosig(const struct hb_biosig_sample_hp6 *s, uint16_t 
 }
 #endif /* CONFIG_HB_ENABLE_OPENVIEW */
 
+/*
+ * VITALS (0x40): the 16-byte hb_vitals_payload_hp6, i.e. the M7's hp6_vitals.
+ *
+ * Every field and the flags reach the consumers. The decode is strict about
+ * length: a short payload (the retired 12-byte form looks exactly like that)
+ * is counted and dropped, because reading it as the new layout would publish a
+ * timestamp as a heart rate.
+ */
 static void dispatch_vitals_hp6(const uint8_t *payload, uint16_t len)
 {
-    if (len < sizeof(struct hb_vitals_payload_hp6)) {
+    struct hb_vitals_payload_hp6 h;
+    if (hp6_vitals_decode(payload, len, &h) != 0) {
+        if (s_rx_vitals_bad_len++ == 0) {
+            ESP_LOGW(TAG, "VITALS (0x40) payload %u B, need %u — rejected (host on the "
+                          "old 12-byte contract?); counted as vbad=", len,
+                     (unsigned)sizeof(struct hb_vitals_payload_hp6));
+        }
         return;
     }
-    const struct hb_vitals_payload_hp6 *h = (const struct hb_vitals_payload_hp6 *)payload;
-    struct hb_vitals_payload v = {
-        .hr          = h->heart_rate_bpm,
-        .spo2        = h->spo2_percent,
-        .rr          = h->resp_rate_bpm,
-        .temp_c_x100 = (int16_t)(h->temp_celsius_x10 * 10),  /* x10 -> x100 */
-        .flags       = 0,
-    };
-    if (v.hr)   { v.flags |= HB_VITAL_HR_VALID; }
-    if (v.spo2) { v.flags |= HB_VITAL_SPO2_VALID; }
-    if (v.rr)   { v.flags |= HB_VITAL_RR_VALID; }
-    /* HP6 status_flags lead-off bit layout isn't pinned in the M7 contract yet;
-     * the lead-off flags stay clear until it is (L2 step 4). */
+
+    struct hb_vitals_payload v;
+    hp6_vitals_to_legacy(&h, &v);       /* ECG HR only; see hp6_vitals.h */
     data_store_set_vitals(&v);
-    ble_gatt_on_vitals(&v);
+    data_store_set_vitals_hp6(&h);      /* full record: source, HRV, flags */
+    ble_gatt_on_vitals_hp6(&h);
 #if defined(CONFIG_HB_ENABLE_OPENVIEW)
-    openview_cache_vitals(h);
+    openview_on_vitals(&h);
 #endif
 }
 
@@ -318,11 +352,11 @@ static void dispatch_resp_hp6(const uint8_t *payload, uint16_t len)
 /*
  * HRV metrics (0x42).
  *
- * Decoded and counted only. There is no HRV consumer to route it to: HP5 has no
- * HRV type, BLE exposes no HRV characteristic, and the OpenView packet has no
- * field for it — adding one is a feature decision, not a dispatch fix. What this
- * case buys is that the frames stop vanishing on the default arm, that the length
- * is validated, and that there is a place for a consumer to attach.
+ * Decoded and counted only. SDNN and RMSSD reach the consumers inside the 16-byte
+ * VITALS record (0x40) instead, and the M7 does not send 0x42 at all. What this
+ * case buys is that such frames stop vanishing on the default arm, that the
+ * length is validated, and that there is a place for a consumer to attach if
+ * the per-beat fields here (RR interval, pNN50, arrhythmia) are ever wanted.
  */
 static void dispatch_hrv_hp6(const uint8_t *payload, uint16_t len)
 {

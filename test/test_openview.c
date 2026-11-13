@@ -39,7 +39,28 @@ int main(void)
     uint8_t small[OPENVIEW_PACKET_LENGTH - 1];
     assert(openview_pack_packet(&in, small, sizeof(small)) == -1);
 
+    /* 0x03 HRV packet: round-trip, and the vitals flags at offset 23 (the
+     * slot that was "Reserved", always 0). */
+    openview_hrv_data_t h = {
+        .timestamp_ms = 0xA1B2C3D4, .heart_rate = 64, .rr_interval_ms = 937,
+        .hrv_sdnn = 300, .hrv_rmssd = 41, .hrv_pnn50 = 12, .signal_quality = 90,
+        .hrv_valid = 1, .arrhythmia_flags = 0, .mean_rr_ms = 940, .vitals_flags = 0x0005,
+    };
+    uint8_t hp[OPENVIEW_HRV_PACKET_LENGTH];
+    assert(openview_pack_hrv_packet(&h, hp, sizeof(hp)) == 0);
+    assert(hp[0] == OPENVIEW_SYNC_BYTE_0 && hp[1] == OPENVIEW_SYNC_BYTE_1);
+    assert(hp[2] == OPENVIEW_FRAME_LENGTH_HRV && hp[3] == OPENVIEW_VERSION_V2 &&
+           hp[4] == OPENVIEW_FRAME_TYPE_HRV);
+    assert(hp[23] == 0x05 && hp[24] == 0x00);
+    assert(hp[25] == OPENVIEW_FOOTER_0 && hp[26] == OPENVIEW_FOOTER_1);
+    assert(openview_is_hrv_packet(hp, sizeof(hp)));
+    openview_hrv_data_t hout;
+    memset(&hout, 0, sizeof(hout));
+    assert(openview_unpack_hrv_packet(hp, sizeof(hp), &hout) == 0);
+    assert(memcmp(&h, &hout, sizeof(h)) == 0);
+
     printf("openview: pack/unpack round-trip OK (50-byte v2), framing + bounds OK\n");
+    printf("openview: 0x03 HRV packet round-trip OK, vitals flags at offset 23\n");
     printf("ALL OPENVIEW TESTS PASSED\n");
     return 0;
 }
