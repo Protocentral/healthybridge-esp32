@@ -70,8 +70,9 @@ config HB_OTA_SELFTEST_FRAMES
     help
       An image installed by OTA boots in PENDING_VERIFY and is kept only after
       it receives this many CRC-valid frames from the host (vitals, waveforms,
-      control commands or status polls) — the host link is the update path, so
-      an image that cannot hold it must not keep its slot.
+      control commands, status polls or firmware-update requests) — the host
+      link is the update path, so an image that cannot hold it must not keep
+      its slot.
 
       The HealthyPi 6 M7 sends ~1 Hz vitals with the radios off and polls
       GET_STATUS every 2 s, so a working link passes within a few seconds.
@@ -93,6 +94,36 @@ config HB_OTA_SELFTEST_TIMEOUT_S
 
       Images flashed over USB are never PENDING_VERIFY, so none of this applies
       to them.
+
+config HB_OTA_RECEIVER
+    bool "Firmware update from the host over the HealthyBridge link"
+    depends on HB_PROFILE_HP6 && BOOTLOADER_APP_ROLLBACK_ENABLE
+    default y
+    help
+      Accept a new application image from the HealthyPi 6 M7 over the
+      HealthyBridge UART (frame types 0x80/0x81, docs/PROTOCOL.md) and write it
+      to the inactive OTA slot. The boot slot changes only on a COMMIT whose
+      read-back SHA-256 matches the digest announced at BEGIN and whose image
+      passes esp_ota_end() validation and the project-name check. The new image
+      then boots PENDING_VERIFY and the post-update self-test keeps it or rolls
+      it back.
+
+      The C6 does not verify a signature: the M7 checks the release signature
+      before it sends COMMIT.
+
+      Requires bootloader rollback, so that an image which cannot hold the link
+      it was installed over is never kept.
+
+config HB_OTA_RX_TIMEOUT_S
+    int "Abort an update after this many seconds without a request (0 = never)"
+    depends on HB_OTA_RECEIVER
+    range 0 3600
+    default 30
+    help
+      An update whose host goes quiet (no BEGIN, DATA or COMMIT) for this long
+      is aborted: the handle is freed and the receiver reports state ERROR with
+      last_error TIMEOUT. The running image and the boot selection are never
+      affected either way. STATUS polls do not count as activity.
 
 comment "HP6-only consumers (BLE / Wi-Fi / dashboard / MQTT stay shared)"
 

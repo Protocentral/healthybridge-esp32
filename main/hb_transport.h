@@ -48,6 +48,11 @@ void hb_transport_spi_tx_stats(uint32_t *sent, uint32_t *drops);
  * SPI build. */
 void hb_transport_uart_flow(uint32_t *rx_queued, int *cts_level, uint32_t *tx_drops);
 
+/* UART backend, HealthyPi 6 only. Wait up to timeout_ms for the TX ring and FIFO
+ * to drain onto the wire. 0 when drained, -1 on timeout (the host is holding
+ * CTS). */
+int hb_transport_uart_flush(uint32_t timeout_ms);
+
 #ifdef __cplusplus
 }
 #endif

@@ -23,6 +23,10 @@
  *   0x51  CTRL_RESP          ✅                         ✅ (shared)
  *   0x60  STATUS_REQ         —                         ✅ (HP6 query)
  *   0x61  STATUS/STATUS_RESP ✅                         ✅ (shared, same direction)
+ *   0x70  SMP_REQ            —                         reserved (Wi-Fi SMP gateway, not built)
+ *   0x71  SMP_RSP            —                         reserved
+ *   0x80  OTA_REQ            —                         ✅ hb_ota_req_hp6  (host -> ESP)
+ *   0x81  OTA_RSP            —                         ✅ hb_ota_rsp_hp6  (ESP -> host)
  *
  * Collision resolved: HP6 previously used 0x41 for HRV, which is HP5 BATTERY.
  * HRV moves to 0x42; HP6 adopts 0x41=BATTERY.
@@ -43,6 +47,8 @@
 #define HB_TYPE_RESP        0x30   /* Respiration batch (single-channel)      */
 #define HB_TYPE_HRV         0x42   /* HRV metrics (moved off HP5 BATTERY 0x41) */
 #define HB_TYPE_STATUS_REQ  0x60   /* Host queries ESP status                 */
+#define HB_TYPE_OTA_REQ     0x80   /* Host -> ESP: firmware-update request    */
+#define HB_TYPE_OTA_RSP     0x81   /* ESP -> host: firmware-update reply      */
 /* 0x20 HB_TYPE_BIOSIG, 0x40 HB_TYPE_VITALS, 0x41 HB_TYPE_BATTERY, 0x50/0x51
  * CTRL, 0x61 STATUS are shared with HP5 — see healthybridge.h. */
 
@@ -251,7 +257,139 @@ struct hb_wifi_status_resp_hp6 {
 #define HB_WIFI_STATE_AP_MODE      0x03
 #define HB_WIFI_STATE_ERROR        0xFF
 
+/* ---- FIRMWARE UPDATE (types 0x80 / 0x81) ---------------------------------
+ *
+ * The M7 relays a new C6 image, received from the host PC, into the C6's
+ * INACTIVE OTA slot. Trust is split: the M7 checks the image's ECDSA-P256
+ * signature before it sends COMMIT; the C6 checks integrity (SHA-256 of what is
+ * actually in flash equals the digest announced at BEGIN), image sanity
+ * (esp_ota_end validation, chip, project name) and never touches the boot
+ * selection except on a successful COMMIT. Full contract, timing and example
+ * frames: docs/PROTOCOL.md, "Firmware update (0x80 / 0x81)".
+ *
+ * Dedicated frame types rather than CTRL_CMD/CTRL_RESP, for three reasons:
+ *   - DATA needs ~1 KB per frame; a CTRL_CMD's params are a 96-byte buffer on
+ *     the M7 and its reply data a 64-byte one;
+ *   - an error reply must carry data (the expected offset), and the M7's
+ *     control path drops reply data whenever status != OK;
+ *   - the C6 routes these frames to their own task straight from the RX path,
+ *     so a flash erase never stalls the waveform dispatch queue and a full
+ *     dispatch queue never drops an update frame.
+ * The SHAPE is the control-command one: the request header mirrors the M7's
+ * hpi_hb_control_cmd ({id, reserved, u16 len, params}) and the reply header
+ * mirrors hb_ctrl_resp_hp6 ({id echo, status, u16 data_len, data}).
+ *
+ * Strictly stop-and-wait: one request outstanding at a time; the reply's `op`
+ * (and, for DATA, `req_offset`) says which request it answers.
+ */
+#define HB_OTA_PROTO_VERSION   1
+
+/* Request ops (hb_ota_req_hp6.op, echoed in hb_ota_rsp_hp6.op). */
+#define HB_OTA_OP_BEGIN        0x01   /* params: hb_ota_begin_hp6 (36 B)        */
+#define HB_OTA_OP_DATA         0x02   /* params: hb_ota_data_hp6 (4 B + bytes)  */
+#define HB_OTA_OP_COMMIT       0x03   /* params: none                           */
+#define HB_OTA_OP_ABORT        0x04   /* params: none                           */
+#define HB_OTA_OP_STATUS       0x05   /* params: none                           */
+
+/* Most image bytes one DATA frame may carry: the HP6 codec cap (1024) minus the
+ * 4-byte request header and the 4-byte offset. */
+#define HB_OTA_MAX_CHUNK       1016
+
+/* Reply status (hb_ota_rsp_hp6.status). Own namespace: unrelated to
+ * HB_CTRL_STATUS_* / the M7's HPI_HB_RESP_*.
+ *   "terminal" = the transfer is over: handle freed, state ERROR, the inactive
+ *   slot holds garbage, boot selection unchanged. A new BEGIN starts over.
+ *   Every other error leaves an active transfer exactly as it was. */
+#define HB_OTA_OK                    0x00
+#define HB_OTA_ERR_BUSY              0x01  /* BEGIN for a different image while one is active, or after COMMIT */
+#define HB_OTA_ERR_BAD_SIZE          0x02  /* BEGIN size 0 / > slot; DATA past image_size        */
+#define HB_OTA_ERR_BAD_OFFSET        0x03  /* DATA offset != next expected (ack.next_offset)     */
+#define HB_OTA_ERR_FLASH_WRITE       0x04  /* erase/write failed               — terminal        */
+#define HB_OTA_ERR_DIGEST_MISMATCH   0x05  /* SHA-256 of the slot != BEGIN's   — terminal        */
+#define HB_OTA_ERR_IMAGE_INVALID     0x06  /* bad magic, esp_ota_end, chip or project — terminal */
+#define HB_OTA_ERR_NOT_IN_TRANSFER   0x07  /* DATA / COMMIT with no active transfer              */
+#define HB_OTA_ERR_RUNNING_UNCONFIRMED 0x08 /* BEGIN while the running image is PENDING_VERIFY   */
+#define HB_OTA_ERR_INCOMPLETE        0x09  /* COMMIT before image_size bytes (ack.next_offset)   */
+#define HB_OTA_ERR_FLASH_READ        0x0A  /* read-back for the digest failed  — terminal        */
+#define HB_OTA_ERR_BOOT_SET          0x0B  /* esp_ota_set_boot_partition failed — terminal       */
+#define HB_OTA_ERR_BAD_REQUEST       0x0C  /* malformed: short, param_len != frame, chunk 0 or > max */
+#define HB_OTA_ERR_UNKNOWN_OP        0x0D
+#define HB_OTA_ERR_TIMEOUT           0x0E  /* last_error only: abandoned transfer aborted itself */
+#define HB_OTA_ERR_NO_SLOT           0x0F  /* no inactive OTA partition (not an A/B layout)      */
+#define HB_OTA_ERR_INTERNAL          0x10  /* esp_ota_begin failed (e.g. no memory)              */
+#define HB_OTA_ERR_ABORTED           0x11  /* last_error only: an ABORT ended a transfer         */
+
+/* Receiver state (hb_ota_status_hp6.state). */
+#define HB_OTA_STATE_IDLE            0
+#define HB_OTA_STATE_RECEIVING       1
+#define HB_OTA_STATE_VERIFYING       2   /* COMMIT in progress (digest, validation, otadata) */
+#define HB_OTA_STATE_COMMITTED       3   /* boot slot switched; rebooting into it            */
+#define HB_OTA_STATE_ERROR           4   /* idle; the last transfer failed (see last_error)  */
+
+/* Image state of a slot (hb_ota_status_hp6.running_img_state / other_img_state).
+ * The ESP-IDF esp_ota_img_states_t, renumbered so the wire does not depend on
+ * IDF's enum values. */
+#define HB_OTA_IMG_VALID             0
+#define HB_OTA_IMG_PENDING_VERIFY    1   /* new image, not yet proven: a reset ROLLS IT BACK */
+#define HB_OTA_IMG_NEW               2
+#define HB_OTA_IMG_INVALID           3
+#define HB_OTA_IMG_ABORTED           4
+#define HB_OTA_IMG_UNDEFINED         5
+#define HB_OTA_IMG_UNKNOWN           0xFF /* no otadata entry for the slot */
+
+struct hb_ota_req_hp6 {
+    uint8_t  op;          /* HB_OTA_OP_* */
+    uint8_t  reserved;    /* 0 */
+    uint16_t param_len;   /* must equal frame payload length - 4 */
+    uint8_t  params[];
+} __attribute__((packed));
+
+struct hb_ota_rsp_hp6 {
+    uint8_t  op;          /* echo of the request's op */
+    uint8_t  status;      /* HB_OTA_OK / HB_OTA_ERR_* */
+    uint16_t data_len;    /* 12 (hb_ota_ack_hp6) for every op but STATUS; 52 for STATUS */
+    uint8_t  data[];
+} __attribute__((packed));
+
+struct hb_ota_begin_hp6 {
+    uint32_t image_size;  /* bytes of the .bin, as written to the slot */
+    uint8_t  sha256[32];  /* SHA-256 of exactly those bytes */
+} __attribute__((packed));
+
+struct hb_ota_data_hp6 {
+    uint32_t offset;      /* byte offset of bytes[0] in the image */
+    uint8_t  bytes[];     /* 1..HB_OTA_MAX_CHUNK image bytes */
+} __attribute__((packed));
+
+/* Reply data for BEGIN / DATA / COMMIT / ABORT, whatever the status. */
+struct hb_ota_ack_hp6 {
+    uint32_t req_offset;  /* DATA: the request's offset; else 0 */
+    uint32_t next_offset; /* next offset the receiver will accept; 0 without an active transfer */
+    uint32_t image_size;  /* the active transfer's size; 0 without one */
+} __attribute__((packed));
+
+/* Reply data for STATUS. */
+struct hb_ota_status_hp6 {
+    uint8_t  proto_version;     /* HB_OTA_PROTO_VERSION */
+    uint8_t  state;             /* HB_OTA_STATE_* */
+    uint8_t  last_error;        /* most recent HB_OTA_ERR_*, 0 after a successful BEGIN */
+    uint8_t  running_slot;      /* 0 = ota_0, 1 = ota_1, 0xFF = other */
+    uint8_t  running_img_state; /* HB_OTA_IMG_* of the running image */
+    uint8_t  other_img_state;   /* HB_OTA_IMG_* of the other slot (ABORTED/INVALID = rolled back) */
+    uint16_t max_chunk;         /* HB_OTA_MAX_CHUNK */
+    uint32_t bytes_received;    /* current or last transfer */
+    uint32_t image_size;        /* current or last transfer's announced size */
+    uint32_t slot_size;         /* capacity of the inactive slot, 0 if none */
+    char     version[32];       /* running image version, NUL-terminated, zero-padded */
+} __attribute__((packed));
+
 /* ---- byte-identical-to-M7 size guards ------------------------------------ */
+_Static_assert(sizeof(struct hb_ota_req_hp6)    == 4,  "ota request header must be 4 bytes");
+_Static_assert(sizeof(struct hb_ota_rsp_hp6)    == 4,  "ota reply header must be 4 bytes");
+_Static_assert(sizeof(struct hb_ota_begin_hp6)  == 36, "ota BEGIN params must be 36 bytes");
+_Static_assert(sizeof(struct hb_ota_data_hp6)   == 4,  "ota DATA params header must be 4 bytes");
+_Static_assert(sizeof(struct hb_ota_ack_hp6)    == 12, "ota ack must be 12 bytes");
+_Static_assert(sizeof(struct hb_ota_status_hp6) == 52, "ota status must be 52 bytes");
 _Static_assert(sizeof(struct hb_ctrl_resp_hp6)      == 4,  "hp6 control response header must be 4 bytes");
 _Static_assert(sizeof(struct hb_wifi_status_resp_hp6) == 40, "hp6 wifi status must be 40 bytes (M7 hpi_hb_wifi_status_resp): 38 + ble_adv + ble_conn");
 _Static_assert(sizeof(struct hb_biosig_sample_hp6)  == 32, "hp6 biosig sample must be 32 bytes");

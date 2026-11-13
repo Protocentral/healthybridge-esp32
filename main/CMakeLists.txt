@@ -20,6 +20,12 @@ if(CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE)
     list(APPEND hb_srcs "ota_selftest.c")
 endif()
 
+# HP6 firmware-update receiver: pure state machine (host-tested by
+# test/test_hb_ota.c) + its ESP-IDF half. Needs the A/B table and rollback.
+if(CONFIG_HB_OTA_RECEIVER)
+    list(APPEND hb_srcs "hb_ota.c" "hb_ota_esp.c")
+endif()
+
 # HP6 vitals/version mapping (pure C, host-tested by test/test_hp6_vitals.c).
 if(CONFIG_HB_PROFILE_HP6)
     list(APPEND hb_srcs "hp6_vitals.c")
@@ -39,6 +45,9 @@ idf_component_register(
     # bt = NimBLE host, nvs_flash = BLE store + config, esp_driver_uart = the host link,
     # esp_wifi/esp_netif/esp_event = Wi-Fi STA/AP (coexists with BLE),
     # esp_http_server = captive-portal provisioning form (lwip provides DNS sockets),
-    # mqtt = optional vitals publish, mdns = healthypi.local for the dashboard.
-    REQUIRES bt nvs_flash esp_driver_uart esp_driver_gpio esp_wifi esp_netif esp_event esp_http_server mqtt mdns esp_app_format app_update esp_timer
+    # mqtt = optional vitals publish, mdns = healthypi.local for the dashboard,
+    # mbedtls = PSA SHA-256 for the HP6 update receiver's read-back digest (a
+    # requirement cannot depend on Kconfig, so it is listed for both profiles;
+    # the HealthyPi 5 image does not reference it).
+    REQUIRES bt nvs_flash esp_driver_uart esp_driver_gpio esp_wifi esp_netif esp_event esp_http_server mqtt mdns esp_app_format app_update esp_timer mbedtls
 )

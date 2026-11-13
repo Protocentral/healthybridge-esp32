@@ -210,3 +210,11 @@ const struct hb_transport_if *hb_transport_get(void)
     return &s_uart_if;
 }
 
+#if defined(CONFIG_HB_PROFILE_HP6)
+/* Wait, at most timeout_ms, for everything queued so far to leave the TX FIFO.
+ * Used before a deliberate restart so the last reply reaches the host. */
+int hb_transport_uart_flush(uint32_t timeout_ms)
+{
+    return uart_wait_tx_done(HB_UART_PORT, pdMS_TO_TICKS(timeout_ms)) == ESP_OK ? 0 : -1;
+}
+#endif

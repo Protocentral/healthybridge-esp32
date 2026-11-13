@@ -9,7 +9,8 @@ on:
 
 jobs:
   # Host-side unit tests: codec + frozen HealthyPi 5 layouts, OpenView packer,
-  # page substituter. Plain C, no ESP-IDF; same script contributors run.
+  # HealthyPi 6 vitals and firmware-update receiver, page substituter. Plain C,
+  # no ESP-IDF; same script contributors run.
   host-tests:
     runs-on: ubuntu-latest
     steps:
