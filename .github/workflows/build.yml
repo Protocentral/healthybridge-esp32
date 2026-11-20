@@ -78,10 +78,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The HealthyPi 6 image ships built with ESP-IDF 6.1.1 (healthypi-6-fw
+      # release decision, 2026-11-20); build CI with the same, so the artifact
+      # is what ships. The HP5 job above stays on 6.0.1.
       - name: ESP-IDF build + merge-bin (esp32c6, HP6 profile)
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v6.0.1
+          esp_idf_version: v6.1.1
           target: esp32c6
           path: '.'
           command: bash hp6.sh merge
