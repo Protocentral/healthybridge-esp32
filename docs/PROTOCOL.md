@@ -140,6 +140,46 @@ For version 1.1.0 (seq 0):
 31 2E 31 2E 30 00 … (27 more 00) …  A1 9B
 ```
 
+### Wi-Fi credentials: WIFI_SET_CREDS (0x23) and WIFI_FORGET (0x24)
+
+HealthyPi 6 only. They let the host provision Wi-Fi over the link, so the
+SoftAP portal is no longer the only way in (it still works). Both are
+`CTRL_CMD`s answered by a bare `CTRL_RESP` (`data_len = 0`), and the status
+says what happened:
+
+| `status` | Meaning |
+|---:|---|
+| `0x00` | done |
+| `0x01` | unknown command: an image older than this section; nothing changed |
+| `0x05` | `BAD_PARAMS`: wrong `param_len` or lengths out of range; nothing stored |
+| `0x06` | `STORE_FAIL`: the NVS write failed |
+
+**WIFI_SET_CREDS (`0x23`)**: `param_len = 98`:
+
+| Offset | Size | Field | Meaning |
+|---:|---:|---|---|
+| 0 | 1 | `ssid_len` | 1–32 |
+| 1 | 1 | `password_len` | 0 (open network) or 8–64 |
+| 2 | 32 | `ssid` | `ssid_len` bytes, then zero padding; no NUL needed |
+| 34 | 64 | `password` | `password_len` bytes, then zero padding |
+
+The credentials replace the stored ones (the same NVS keys the portal writes).
+If Wi-Fi is on, the C6 drops any network or portal it has and connects with the
+new credentials within a second. "On" means `WIFI_ENABLE` or `WIFI_SOFTAP` was
+sent and `WIFI_DISABLE` has not been, including Wi-Fi enabled with nothing
+stored yet. Otherwise it stores them and stays quiet; the next `WIFI_ENABLE`
+uses them. The ack means *stored*, not *connected*; the host
+watches `GET_STATUS` for the outcome, as for every Wi-Fi transition. The
+password is never logged.
+
+**WIFI_FORGET (`0x24`)**: no parameters. Erases the stored credentials and
+takes Wi-Fi down. After a reboot the C6 has nothing to connect to until it is
+provisioned again.
+
+**Status in AP mode.** While the portal is up (`state = 3`), the status
+struct's `ssid` field carries the portal's own network name (`HealthyPi-XXXX`),
+not an empty string, so a host can say which network to join.
+
 ### Firmware update (0x80 / 0x81)
 
 The M7 relays a new C6 application image — received from the host PC over USB —

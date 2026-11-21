@@ -179,10 +179,47 @@ struct hb_ctrl_resp_hp6 {
 
 #define HB_CTRL_STATUS_OK          0x00
 #define HB_CTRL_STATUS_UNKNOWN_CMD 0x01
+/* 0x02-0x04 are taken on the M7 (HPI_HB_RESP_PENDING/NOT_SUPPORTED/BUSY). */
+#define HB_CTRL_STATUS_BAD_PARAMS  0x05   /* = HPI_HB_RESP_BAD_PARAMS */
+#define HB_CTRL_STATUS_STORE_FAIL  0x06   /* = HPI_HB_RESP_STORE_FAIL: NVS write failed */
+
+/* ---- HP6 CTRL_CMD framing ------------------------------------------------
+ *
+ * The M7 sends every command as `struct hpi_hb_control_cmd`:
+ *
+ *   cmd_id u8 | reserved u8 | param_len u16 LE | params[param_len]
+ *
+ * so on HP6 a command's parameters start at payload[4], NOT payload[1] (which is
+ * HP5's frozen framing: cmd byte, then the parameters). hp6_cmd_params() in
+ * control.c is the one place that unpacks it.
+ */
+#define HB_HP6_CMD_HDR_LEN   4
 
 /* ---- HP6-only control commands (CTRL_CMD payload[0]) --------------------
- * 0x31 is free in both the frozen HP5 table and the M7's HPI_HB_CMD_* table. */
+ * 0x23, 0x24 and 0x31 are free in both the frozen HP5 table and the M7's
+ * HPI_HB_CMD_* table. An image without them answers HB_CTRL_STATUS_UNKNOWN_CMD,
+ * which is how the M7 tells "too old" from "refused". */
+#define HB_CMD_WIFI_SET_CREDS 0x23  /* params = hb_wifi_creds_hp6; bare ack */
+#define HB_CMD_WIFI_FORGET    0x24  /* no params; erase creds, radio off; bare ack */
 #define HB_CMD_GET_VERSION   0x31   /* -> CTRL_RESP, data = hb_version_resp_hp6 */
+
+/* ---- WIFI_SET_CREDS parameters (98 bytes) --------------------------------
+ *
+ * Mirrors `struct hpi_hb_wifi_connect_params` on the M7. Lengths are explicit
+ * and the strings are NOT NUL-terminated on the wire: a 32-byte SSID and a
+ * 64-character hex PSK both fill their field exactly.
+ *
+ *   ssid_len      1..32
+ *   password_len  0 (open network) or 8..64 (WPA2 passphrase / hex PSK)
+ *
+ * Anything else is answered HB_CTRL_STATUS_BAD_PARAMS and nothing is stored.
+ */
+struct hb_wifi_creds_hp6 {
+    uint8_t ssid_len;
+    uint8_t password_len;
+    char    ssid[32];
+    char    password[64];
+} __attribute__((packed));
 
 /* ---- VERSION, carried as GET_VERSION's CTRL_RESP data (36 bytes) ---------
  *
@@ -384,6 +421,7 @@ struct hb_ota_status_hp6 {
 } __attribute__((packed));
 
 /* ---- byte-identical-to-M7 size guards ------------------------------------ */
+_Static_assert(sizeof(struct hb_wifi_creds_hp6)  == 98, "wifi creds params must match hpi_hb_wifi_connect_params (98 bytes)");
 _Static_assert(sizeof(struct hb_ota_req_hp6)    == 4,  "ota request header must be 4 bytes");
 _Static_assert(sizeof(struct hb_ota_rsp_hp6)    == 4,  "ota reply header must be 4 bytes");
 _Static_assert(sizeof(struct hb_ota_begin_hp6)  == 36, "ota BEGIN params must be 36 bytes");
