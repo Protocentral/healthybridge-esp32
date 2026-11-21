@@ -142,8 +142,9 @@ For version 1.1.0 (seq 0):
 
 ### Wi-Fi credentials: WIFI_SET_CREDS (0x23) and WIFI_FORGET (0x24)
 
-HealthyPi 6 only. They let the host provision Wi-Fi over the link, so the
-SoftAP portal is no longer the only way in (it still works). Both are
+HealthyPi 6 only, since HealthyBridge **1.2.0**; a 1.1.x image answers both
+with ERROR (unknown command). They let the host provision Wi-Fi over the link,
+so the SoftAP portal is no longer the only way in (it still works). Both are
 `CTRL_CMD`s answered by a bare `CTRL_RESP` (`data_len = 0`), and the status
 says what happened:
 
