@@ -207,13 +207,16 @@ static esp_err_t root_get(httpd_req_t *req)
     snprintf(fw, sizeof(fw), "%s", app ? app->version : "unknown");
 
     const struct tpl_var vars[] = {
+        { "PRODUCT", HB_PRODUCT_NAME_HTML,                  NULL },
         { "FWVER",   fw,                                    NULL },
         { "APNAME",  ap[0] ? ap : "\xe2\x80\x94",           NULL },
         { "NETLIST", NULL,                                  emit_netlist },
         { "SSID",    ssid_e,                                NULL },
         { "MQTTCHK", c->mqtt_enabled ? "true" : "false",    NULL },
+        { "MQTTVAL", c->mqtt_enabled ? "1" : "0",           NULL },
         { "MQTTURI", uri_e,                                 NULL },
         { "DASHCHK", c->dashboard_enabled ? "true" : "false", NULL },
+        { "DASHVAL", c->dashboard_enabled ? "1" : "0",      NULL },
     };
 
     httpd_resp_set_type(req, "text/html");
@@ -250,12 +253,14 @@ static esp_err_t save_post(httpd_req_t *req)
     }
     body[total] = '\0';
 
-    char ssid[40] = {0}, pass[80] = {0}, mqtt_uri[160] = {0}, tmp[8];
+    char ssid[40] = {0}, pass[80] = {0}, mqtt_uri[160] = {0};
     form_field(body, "ssid", ssid, sizeof(ssid));
     form_field(body, "pass", pass, sizeof(pass));
     form_field(body, "mqtt_uri", mqtt_uri, sizeof(mqtt_uri));
-    bool mqtt_en = form_field(body, "mqtt_en", tmp, sizeof(tmp)); /* checkbox present == on */
-    bool dash_en = form_field(body, "dash_en", tmp, sizeof(tmp));
+    /* The portal's switches post hidden inputs that are always present
+     * ("1"/"0"), so presence alone means nothing here. */
+    bool mqtt_en = form_flag(body, "mqtt_en");
+    bool dash_en = form_flag(body, "dash_en");
     free(body);
 
     ESP_LOGI(TAG, "provisioned ssid=\"%s\" mqtt=%d dash=%d", ssid, mqtt_en, dash_en);
@@ -266,10 +271,13 @@ static esp_err_t save_post(httpd_req_t *req)
     char ssid_e[224];
     html_escape(ssid_e, sizeof(ssid_e), ssid);
 
-    const struct tpl_var vars[] = { { "SSID", ssid_e, NULL } };
+    const struct tpl_var vars[] = {
+        { "PRODUCT", HB_PRODUCT_NAME_HTML, NULL },
+        { "SSID",    ssid_e,               NULL },
+    };
 
     httpd_resp_set_type(req, "text/html");
-    tpl_send(req, saved_html_start, vars, 1, NULL);
+    tpl_send(req, saved_html_start, vars, sizeof(vars) / sizeof(vars[0]), NULL);
 
     xTaskCreate(reboot_task, "reboot", 2048, NULL, 5, NULL);
     return ESP_OK;

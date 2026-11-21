@@ -87,6 +87,15 @@ bool form_field(const char *body, const char *key, char *out, size_t outlen)
     return false;
 }
 
+bool form_flag(const char *body, const char *key)
+{
+    char v[8];
+    if (!form_field(body, key, v, sizeof(v))) {
+        return false;
+    }
+    return v[0] != '\0' && strcmp(v, "0") != 0;
+}
+
 void json_escape(char *dst, size_t dstlen, const char *src)
 {
     if (dstlen == 0) {

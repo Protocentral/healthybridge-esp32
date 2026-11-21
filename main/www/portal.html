@@ -1,6 +1,6 @@
 <!DOCTYPE html><html><head><meta charset=utf-8>
 <meta name=viewport content='width=device-width,initial-scale=1'>
-<title>HealthyPi 6 — Wi-Fi Setup</title>
+<title>{{PRODUCT}} — Wi-Fi Setup</title>
 <style>
 /* Tokens mirror app_m7/src/ui/theme/hpi_m3_theme.h so the portal and the
    device screen are recognisably the same product. Single-theme on purpose.
@@ -77,7 +77,7 @@ font:inherit;font-size:15px;font-weight:600;cursor:pointer}
 <div class=w><header>
   <div class=mk>
     <svg viewBox='0 0 52 28' aria-hidden=true><path d='M1 14h11l4-9 6 20 5-13 4 6h20'/></svg>
-    <h1>HealthyPi&nbsp;6</h1>
+    <h1>{{PRODUCT}}</h1>
   </div>
   <div class=id><span><b>fw</b> {{FWVER}}</span><span><b>ap</b> {{APNAME}}</span></div>
   <p class=le>Connect this device to your network. It streams vitals over Wi-Fi
@@ -115,7 +115,7 @@ font:inherit;font-size:15px;font-weight:600;cursor:pointer}
       <button type=button class=sw id=mq role=switch aria-label='Publish to MQTT'
               aria-checked={{MQTTCHK}}></button>
     </div>
-    <input type=hidden name=mqtt_en id=mqh value="">
+    <input type=hidden name=mqtt_en id=mqh value="{{MQTTVAL}}">
     <div class=sf id=mf>
       <div class=f style='margin-top:0'>
         <label for=uri>Broker address</label>
@@ -129,7 +129,7 @@ font:inherit;font-size:15px;font-weight:600;cursor:pointer}
       <button type=button class=sw id=db role=switch aria-label='Local web dashboard'
               aria-checked={{DASHCHK}}></button>
     </div>
-    <input type=hidden name=dash_en id=dbh value="">
+    <input type=hidden name=dash_en id=dbh value="{{DASHVAL}}">
   </section>
 
   <div class=ac><div class=w>
@@ -151,14 +151,14 @@ function pick(e,n){
 }
 function sw(b,h,f){b.onclick=function(){
   var v=b.getAttribute('aria-checked')!=='true';
-  b.setAttribute('aria-checked',String(v));h.value=v?'1':'';if(f)f(v);};}
+  b.setAttribute('aria-checked',String(v));h.value=v?'1':'0';if(f)f(v);};}
 var mq=document.getElementById('mq'),db=document.getElementById('db'),
     mf=document.getElementById('mf'),mqh=document.getElementById('mqh'),
     dbh=document.getElementById('dbh');
 sw(mq,mqh,function(v){mf.style.display=v?'':'none';});
 sw(db,dbh);
-mqh.value=mq.getAttribute('aria-checked')==='true'?'1':'';
-dbh.value=db.getAttribute('aria-checked')==='true'?'1':'';
+mqh.value=mq.getAttribute('aria-checked')==='true'?'1':'0';
+dbh.value=db.getAttribute('aria-checked')==='true'?'1':'0';
 mf.style.display=mq.getAttribute('aria-checked')==='true'?'':'none';
 document.getElementById('rv').onclick=function(){
   var p=document.getElementById('pw'),sh=p.type==='text';
