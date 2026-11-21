@@ -40,3 +40,10 @@ CONFIG_HB_UART_BAUD_HP6=2000000
 # to. Raise it if a deployment genuinely needs the range, and re-measure the
 # brownout margin when you do.
 CONFIG_ESP_PHY_MAX_WIFI_TX_POWER=13
+
+# Reproducible builds: no build time, date or absolute paths in the image, so
+# the same commit with the same ESP-IDF produces the same bytes on CI and on any
+# bench machine. That is what lets a release bundle's C6 hash be checked by
+# rebuilding. Verified on 6.1.1: two clones in different directories gave
+# byte-identical images. The app descriptor's time/date fields read empty.
+CONFIG_APP_REPRODUCIBLE_BUILD=y

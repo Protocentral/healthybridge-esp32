@@ -186,9 +186,11 @@ unpack it and use `./flash_hp6.sh` from inside it, as described under
 
 ### 1. Install ESP-IDF
 
-This firmware targets **ESP-IDF v6.0** or later; CI builds with **v6.0.1**, the
-version the managed components in [`dependencies.lock`](dependencies.lock) were
-resolved against. Follow the official ESP-IDF Get
+This firmware targets **ESP-IDF v6.0** or later. CI builds HealthyPi 5 with
+**v6.0.1** and HealthyPi 6 with **v6.1.1** — the version the HealthyPi 6 image
+ships built with, and the one [`dependencies.lock`](dependencies.lock) records.
+HealthyPi 6 builds are reproducible (`CONFIG_APP_REPRODUCIBLE_BUILD`): the same
+commit and ESP-IDF version give the same image bytes. Follow the official ESP-IDF Get
 Started guide for your target —
 [esp32c3](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/get-started/)
 (HealthyPi 5) or
@@ -231,7 +233,7 @@ slot (`tools/check_app_size.py`).
 
 The firmware version is the semver in [`version.txt`](version.txt). ESP-IDF
 embeds it in the app descriptor, and the boot log prints it:
-`HealthyBridge 1.1.0 for HealthyPi 6 (esp32c6) starting`.
+`HealthyBridge 1.2.0 for HealthyPi 6 (esp32c6) starting`.
 
 `sdkconfig.hp5`/`sdkconfig.hp6` are seeded once from `sdkconfig.defaults` plus
 the per-profile defaults and **ignored thereafter** — after editing a defaults
