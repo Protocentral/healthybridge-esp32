@@ -121,9 +121,8 @@ static int uart_send(const uint8_t *buf, size_t len)
     return (w == (int)len) ? 0 : -1;
 }
 
-#if defined(CONFIG_HB_PROFILE_HP6)
 /*
- * HP6 receive: event-driven, never "wait for a full chunk".
+ * Receive, both products: event-driven, never "wait for a full chunk".
  *
  * uart_read_bytes(..., portMAX_DELAY) returns only once the WHOLE requested
  * length has arrived. With a 128-byte chunk that held every short frame in the
@@ -139,6 +138,11 @@ static int uart_send(const uint8_t *buf, size_t len)
  * line goes idle for the RX timeout (a few symbol times), so waiting on the
  * event queue and draining what is buffered delivers a frame microseconds
  * after its last byte. The periodic drain is a safety net for a dropped event.
+ *
+ * HP5 shares this path. Its v1.0.0 read one byte at a time, so it never had
+ * the problem; the dual-target merge gave it the 128-byte blocking read, which
+ * added ~55 ms per frame while streaming and held vitals, battery and command
+ * replies for seconds while not streaming. Restored here.
  */
 static QueueHandle_t s_uart_evq;
 
@@ -163,19 +167,6 @@ static void hb_rx_task(void *arg)
         hb_rx_drain(chunk, sizeof(chunk));
     }
 }
-#else
-static void hb_rx_task(void *arg)
-{
-    (void)arg;
-    uint8_t chunk[HB_RX_CHUNK];
-    for (;;) {
-        int n = uart_read_bytes(HB_UART_PORT, chunk, sizeof(chunk), portMAX_DELAY);
-        if (n <= 0) { continue; }
-        s_rx_bytes += (uint32_t)n;
-        if (s_sink) { s_sink(chunk, (size_t)n, s_sink_user); }
-    }
-}
-#endif
 
 /*
  * Flow-control state, for the status line.
@@ -225,13 +216,8 @@ static int uart_init(void)
         .rx_flow_ctrl_thresh = HB_UART_FLOW_THRESH,
         .source_clk = UART_SCLK_DEFAULT,
     };
-#if defined(CONFIG_HB_PROFILE_HP6)
     ESP_ERROR_CHECK(uart_driver_install(HB_UART_PORT, HB_UART_RX_BUF,
                                         HB_UART_TX_BUF, 16, &s_uart_evq, 0));
-#else
-    ESP_ERROR_CHECK(uart_driver_install(HB_UART_PORT, HB_UART_RX_BUF,
-                                        HB_UART_TX_BUF, 0, NULL, 0));
-#endif
     ESP_ERROR_CHECK(uart_param_config(HB_UART_PORT, &cfg));
     ESP_ERROR_CHECK(uart_set_pin(HB_UART_PORT, HB_UART_PIN_TX, HB_UART_PIN_RX,
                                  HB_UART_PIN_RTS, HB_UART_PIN_CTS));
