@@ -16,6 +16,7 @@
 #include "esp_app_desc.h"
 #include "healthybridge_hp6.h"
 #include "hp6_vitals.h"
+#include "cfg.h"
 #endif
 
 static const char *TAG = "control";
@@ -112,7 +113,15 @@ static void control_build_status(struct hb_wifi_status_resp_hp6 *s)
     }
     s->rssi = wifi_get_rssi();
     wifi_get_ip4(s->ip_addr);
-    wifi_get_ssid(s->ssid, sizeof(s->ssid));
+    /* In AP mode `ssid` is the portal's own network name (HealthyPi-XXXX), so a
+     * host can tell a user -- or a test rig -- which network to join. Nothing
+     * else can: the name is derived from the C6's MAC, and desktop OSes
+     * increasingly hide nearby SSIDs from scripts. */
+    if (s->state == HB_WIFI_STATE_AP_MODE) {
+        wifi_get_ap_name(s->ssid, sizeof(s->ssid));
+    } else {
+        wifi_get_ssid(s->ssid, sizeof(s->ssid));
+    }
     s->ble_adv  = ble_gatt_is_advertising() ? 1 : 0;
     s->ble_conn = ble_gatt_is_connected()   ? 1 : 0;
 }
@@ -183,11 +192,108 @@ static void control_ack_version(uint8_t cmd)
 }
 #endif
 
+#if defined(CONFIG_HB_PROFILE_HP6)
+/*
+ * Parameters of an HP6 command: the bytes after the 4-byte hpi_hb_control_cmd
+ * header (see HB_HP6_CMD_HDR_LEN). Returns NULL when the frame is shorter than
+ * the length it declares; *plen is then 0.
+ */
+static const uint8_t *hp6_cmd_params(const uint8_t *payload, uint16_t len, uint16_t *plen)
+{
+    *plen = 0;
+    if (len < HB_HP6_CMD_HDR_LEN) {
+        return NULL;
+    }
+    uint16_t declared = (uint16_t)(payload[2] | (payload[3] << 8));
+    if (declared > len - HB_HP6_CMD_HDR_LEN) {
+        return NULL;
+    }
+    *plen = declared;
+    return &payload[HB_HP6_CMD_HDR_LEN];
+}
+
+/*
+ * WIFI_SET_CREDS: validate, store, and -- only if Wi-Fi is already in use --
+ * move the radio onto the new network.
+ *
+ * "In use" is wifi_is_wanted(): Wi-Fi was enabled or the portal opened, and not
+ * since stopped -- including the case that matters most, Wi-Fi enabled with no
+ * network stored yet, where neither a station nor the portal is running. Testing
+ * only those two (as the first version did) stored the credentials and then sat
+ * on them until the next WIFI_ENABLE. A C6 the host powered with no radio
+ * (conn_enable radios=0) stays quiet: the host owns the radio bitmask, and a
+ * radio that came up on its own would disagree with it. The host turns Wi-Fi on
+ * when it wants it, and WIFI_ENABLE then uses what was stored here.
+ *
+ * The NVS write is synchronous (tens of ms) and fits the host's 300 ms deadline;
+ * the reconnect is deferred to wifi_tick() like every other radio transition.
+ * The password is never logged.
+ */
+static uint8_t control_wifi_set_creds(const uint8_t *p, uint16_t plen)
+{
+    struct hb_wifi_creds_hp6 c;
+
+    if (p == NULL || plen != sizeof(c)) {
+        ESP_LOGW(TAG, "WIFI_SET_CREDS: %u B params, want %u", plen, (unsigned)sizeof(c));
+        return HB_CTRL_STATUS_BAD_PARAMS;
+    }
+    memcpy(&c, p, sizeof(c));
+    if (c.ssid_len == 0 || c.ssid_len > sizeof(c.ssid) ||
+        c.password_len > sizeof(c.password) ||
+        (c.password_len > 0 && c.password_len < 8)) {
+        ESP_LOGW(TAG, "WIFI_SET_CREDS: bad lengths ssid=%u pw=%u", c.ssid_len, c.password_len);
+        return HB_CTRL_STATUS_BAD_PARAMS;
+    }
+
+    char ssid[sizeof(c.ssid) + 1];
+    char pass[sizeof(c.password) + 1];
+
+    memcpy(ssid, c.ssid, c.ssid_len);
+    ssid[c.ssid_len] = '\0';
+    memcpy(pass, c.password, c.password_len);
+    pass[c.password_len] = '\0';
+    if (strlen(ssid) != c.ssid_len || strlen(pass) != c.password_len) {
+        /* An embedded NUL: NVS stores C strings, so it would come back shorter. */
+        return HB_CTRL_STATUS_BAD_PARAMS;
+    }
+
+    bool in_use = wifi_is_wanted();
+    int err = cfg_set_wifi(ssid, pass);
+
+    memset(pass, 0, sizeof(pass));
+    memset(&c, 0, sizeof(c));
+    if (err != 0) {
+        ESP_LOGE(TAG, "WIFI_SET_CREDS: NVS write failed (%d)", err);
+        return HB_CTRL_STATUS_STORE_FAIL;
+    }
+    ESP_LOGI(TAG, "cmd WIFI_SET_CREDS ssid=\"%s\"%s", ssid, in_use ? ", reconnecting" : "");
+    if (in_use) {
+        wifi_request_sta_restart();
+    }
+    return HB_CTRL_STATUS_OK;
+}
+
+/* WIFI_FORGET: erase the stored network and take Wi-Fi down. */
+static uint8_t control_wifi_forget(void)
+{
+    int err = cfg_set_wifi("", "");
+
+    wifi_request_stop();
+    if (err != 0) {
+        ESP_LOGE(TAG, "WIFI_FORGET: NVS write failed (%d)", err);
+        return HB_CTRL_STATUS_STORE_FAIL;
+    }
+    ESP_LOGI(TAG, "cmd WIFI_FORGET");
+    return HB_CTRL_STATUS_OK;
+}
+#endif
+
 void control_handle_cmd(const uint8_t *payload, uint16_t len)
 {
     uint8_t cmd = payload[0];
     bool known = true;
     bool acked = false;   /* a case that answers with data must not be re-acked */
+    uint8_t status = 0;   /* for a known command that can fail; 0 = OK */
     switch (cmd) {
     case HB_CMD_PING:
 #if !defined(CONFIG_HB_PROFILE_HP6)
@@ -210,9 +316,19 @@ void control_handle_cmd(const uint8_t *payload, uint16_t len)
         break;
     case HB_CMD_BLE_SET_NAME: {
         char name[32];
+#if defined(CONFIG_HB_PROFILE_HP6)
+        /* HP6 framing: the name follows the 4-byte command header. Reading it
+         * from payload[1] (HP5's framing) made the reserved byte -- always 0 --
+         * the first character, so every name came out empty. */
+        uint16_t nlen;
+        const uint8_t *np = hp6_cmd_params(payload, len, &nlen);
+        if (np == NULL) { nlen = 0; np = payload; }
+#else
         uint16_t nlen = len - 1;
+        const uint8_t *np = &payload[1];
+#endif
         if (nlen >= sizeof(name)) { nlen = sizeof(name) - 1; }
-        memcpy(name, &payload[1], nlen);
+        memcpy(name, np, nlen);
         name[nlen] = '\0';
         ESP_LOGI(TAG, "cmd BLE_SET_NAME \"%s\"", name);
         ble_gatt_set_name(name);
@@ -234,6 +350,15 @@ void control_handle_cmd(const uint8_t *payload, uint16_t len)
         /* Like GET_STATUS: the reply carries the data, so it is the only ack. */
         control_ack_version(cmd);
         acked = true;
+        break;
+    case HB_CMD_WIFI_SET_CREDS: {
+        uint16_t plen;
+        const uint8_t *p = hp6_cmd_params(payload, len, &plen);
+        status = control_wifi_set_creds(p, plen);
+        break;
+    }
+    case HB_CMD_WIFI_FORGET:
+        status = control_wifi_forget();
         break;
 #endif
     /*
@@ -274,6 +399,6 @@ void control_handle_cmd(const uint8_t *payload, uint16_t len)
     /* 0/1 literals, not HB_CTRL_STATUS_*: those live in healthybridge_hp6.h,
      * which is not included in the HP5 build. */
     if (!acked) {
-        control_ack(cmd, known ? 0 : 1);
+        control_ack(cmd, known ? status : 1);
     }
 }

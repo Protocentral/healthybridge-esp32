@@ -70,6 +70,11 @@ static esp_netif_t *s_sta_netif;
 static esp_netif_t *s_ap_netif;
 
 static bool      s_sta_active;          /* STA up and auto-reconnect wanted */
+/* Wi-Fi was asked for (STA or portal) and not since stopped. Unlike
+ * s_sta_active it survives the states in between -- no credentials stored, a
+ * rejected password on its way to the portal -- which is what lets credentials
+ * that arrive then be acted on. Cleared only by wifi_stop(). */
+static bool      s_wifi_wanted;
 static uint8_t   s_sta_fail;            /* consecutive connect failures (saturates) */
 static uint8_t   s_auth_fail;           /* consecutive auth-class failures */
 static bool      s_ever_connected;      /* creds proven good at least once */
@@ -100,6 +105,7 @@ enum wifi_req {
     WIFI_REQ_STA,      /* connect with stored credentials */
     WIFI_REQ_PORTAL,   /* open the sticky provisioning SoftAP */
     WIFI_REQ_STOP,     /* radios down */
+    WIFI_REQ_STA_RESTART, /* drop the current network, connect with new credentials */
 };
 static volatile enum wifi_req s_req;
 
@@ -257,6 +263,7 @@ void wifi_start_provisioning(void)
 void wifi_request_sta(void)    { s_req = WIFI_REQ_STA; }
 void wifi_request_portal(void) { s_req = WIFI_REQ_PORTAL; }
 void wifi_request_stop(void)   { s_req = WIFI_REQ_STOP; }
+void wifi_request_sta_restart(void) { s_req = WIFI_REQ_STA_RESTART; }
 
 static void provisioning_enter(bool sticky)
 {
@@ -269,6 +276,7 @@ static void provisioning_enter(bool sticky)
      * s_sta_active first ensures the STA_DISCONNECTED from this stop does not
      * auto-reconnect us back out of AP mode. */
     s_sta_active = false;
+    s_wifi_wanted = true;
     s_want_provision = false;
     s_retry_in = 0;
     s_ap_secs = 0;
@@ -313,6 +321,7 @@ static void provisioning_enter(bool sticky)
 
 void wifi_start_sta(void)
 {
+    s_wifi_wanted = true;
     /* Guard against connecting to an empty SSID. The host MCU may send WIFI_ENABLE
      * before any credentials are provisioned; dialing "" just fails and reconnects
      * in a loop. Do NOT open the SoftAP portal here either — provisioning is an
@@ -332,6 +341,7 @@ void wifi_start_sta(void)
     if (!cfg_have_wifi_creds()) {
         ESP_LOGW(TAG, "WIFI_ENABLE with no stored SSID — keeping Wi-Fi off (send WIFI_SOFTAP to provision)");
         wifi_stop();
+        s_wifi_wanted = true;   /* still wanted: WIFI_SET_CREDS connects at once */
         return;
     }
 
@@ -376,6 +386,7 @@ void wifi_stop(void)
 {
     /* Clear before esp_wifi_stop() so its STA_DISCONNECTED does not reconnect. */
     s_sta_active = false;
+    s_wifi_wanted = false;
     s_want_provision = false;
     s_retry_in = 0;
     if (s_ap_mode) {
@@ -411,6 +422,14 @@ void wifi_tick(void)
             break;
         case WIFI_REQ_STOP:
             wifi_stop();
+            break;
+        case WIFI_REQ_STA_RESTART:
+            /* wifi_start_sta() alone would not leave an associated network:
+             * esp_wifi_set_config() on a connected STA takes effect only at the
+             * next connect. Stop first (which also closes a portal), then dial
+             * the new credentials. */
+            wifi_stop();
+            wifi_start_sta();
             break;
         default:
             break;
@@ -467,6 +486,7 @@ void wifi_get_ip(char *buf, size_t n)
  * apply — a host that shows invented state is worse than one that shows none.
  */
 bool wifi_is_sta_active(void) { return s_sta_active; }
+bool wifi_is_wanted(void)     { return s_wifi_wanted; }
 
 int8_t wifi_get_rssi(void)
 {

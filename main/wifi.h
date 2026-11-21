@@ -42,6 +42,9 @@ void wifi_stop(void);
 void wifi_request_sta(void);
 void wifi_request_portal(void);
 void wifi_request_stop(void);
+/* New credentials were stored while Wi-Fi was in use: leave the current network
+ * (or the portal) and connect with them. */
+void wifi_request_sta_restart(void);
 
 bool wifi_is_connected(void);
 bool wifi_is_ap_mode(void);
@@ -50,6 +53,8 @@ void wifi_get_ip(char *buf, size_t n);   /* "0.0.0.0" if not connected */
 /* Link details for a host status report (HP6 GET_STATUS). Each yields the
  * "unknown" value when it does not apply, never a stale one. */
 bool   wifi_is_sta_active(void);         /* STA up and auto-reconnect wanted */
+bool   wifi_is_wanted(void);             /* Wi-Fi asked for and not since stopped,
+                                          * even with nothing to connect to */
 int8_t wifi_get_rssi(void);              /* dBm; 0 when not connected */
 void   wifi_get_ip4(uint8_t out[4]);     /* a.b.c.d; 0.0.0.0 when no lease */
 void   wifi_get_ssid(char *buf, size_t n); /* "" when not connected */
