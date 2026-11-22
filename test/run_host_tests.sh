@@ -14,6 +14,7 @@
 #                    mismatch, abort, timeout — and golden frames for each
 #                    request and reply
 #   test_www_tpl   — {{TOKEN}} page substituter (zero-length-chunk regression)
+#   test_form_util — form_flag(): portal/dashboard switches read on and off
 #
 # CI runs exactly this script; run it locally after touching any of the files
 # under test.
@@ -46,6 +47,7 @@ run hp6_vitals    -DHB_CODEC_MAX_PAYLOAD=1024 test/test_hp6_vitals.c main/hp6_vi
                   main/openview_protocol.c main/hb_codec.c
 run hb_ota        -DHB_CODEC_MAX_PAYLOAD=1024 test/test_hb_ota.c main/hb_ota.c main/hb_codec.c
 run www_tpl       test/test_www_tpl.c main/www_tpl.c
+run form_util     test/test_form_util.c main/form_util.c
 
 if [ "$fail" -ne 0 ]; then
   echo "host tests: FAILED" >&2

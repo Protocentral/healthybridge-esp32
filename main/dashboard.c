@@ -485,9 +485,9 @@ static esp_err_t settings_post(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad body");
         return ESP_FAIL;
     }
-    char uri[160], tmp[8];
-    bool mqtt_en = form_field(body, "mqtt_en", tmp, sizeof(tmp));
-    bool dash_en = form_field(body, "dash_en", tmp, sizeof(tmp));
+    char uri[160];
+    bool mqtt_en = form_flag(body, "mqtt_en");
+    bool dash_en = form_flag(body, "dash_en");
     form_field(body, "mqtt_uri", uri, sizeof(uri));
 
     cfg_set_mqtt(mqtt_en, uri);

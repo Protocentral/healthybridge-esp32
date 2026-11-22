@@ -158,8 +158,9 @@ completely silent link.
 ## Install prebuilt firmware (no build)
 
 The easiest way to flash or update a HealthyPi 5 ESP32-C3 — no toolchain required.
-Releases currently carry the **HealthyPi 5 (ESP32-C3)** image only; build
-HealthyPi 6 from source with `./hp6.sh` (below).
+Each product has its own release series: **`v*`** tags are HealthyPi 5
+(ESP32-C3) and **`hp6-v*`** tags are HealthyPi 6 (ESP32-C6). "Latest release"
+always means the HealthyPi 5 one.
 
 From the [latest release](https://github.com/Protocentral/healthybridge-esp32/releases/latest),
 download `healthybridge-esp32-merged.bin` (and the app-only binary if updating)
@@ -177,9 +178,11 @@ plus `flash.sh`/`flash.bat`, then `pip install esptool` and run:
 > over-the-air (OTA) update path, by design: its partition table has a single
 > `factory` app, so updates are over USB/serial only.
 
-HealthyPi 6 images are not in releases yet. Every CI run of the `firmware-hp6`
-job uploads one as a build artifact (`healthybridge-hp6-esp32c6-firmware`):
-unpack it and use `./flash_hp6.sh` from inside it, as described under
+HealthyPi 6 units normally get the C6 image inside the HealthyPi 6 firmware
+bundle (`healthypi fw update`), not from here. For a full install over the C6's
+USB port, take the zip from an `hp6-v*` release, or the `firmware-hp6` CI
+artifact (`healthybridge-hp6-esp32c6-firmware`), unpack it and run
+`./flash_hp6.sh` from inside it, as described under
 [Flashing a HealthyPi 6](#flashing-a-healthypi-6).
 
 ## Getting started

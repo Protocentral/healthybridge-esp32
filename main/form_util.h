@@ -14,6 +14,13 @@
  * a present key with no value still returns true). */
 bool form_field(const char *body, const char *key, char *out, size_t outlen);
 
+/* An on/off field: true only when `key` is present with a value other than
+ * "" or "0". Works for both shapes the pages send -- a checkbox (absent when
+ * off, "on" when ticked) and the portal's always-present hidden input
+ * ("1" / "0"). Do not use form_field()'s return value for a switch: the
+ * hidden input is always present, so it would read as always on. */
+bool form_flag(const char *body, const char *key);
+
 /* Escape src for interpolation into HTML text or a quoted attribute value,
  * writing a NUL-terminated result to dst. Escapes & < > " ' — enough for both
  * element content and single/double-quoted attributes. Output is truncated
